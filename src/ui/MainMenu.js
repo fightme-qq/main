@@ -35,6 +35,8 @@ export class MainMenu {
 
     this._worldList = el('ul', { className: 'world-list' });
     this._storageNote = el('p', { className: 'settings-note', hidden: true });
+    /** @type {Array<Object>} Last world list received from `setWorlds`. */
+    this._worlds = [];
 
     this._nameInput = el('input', {
       className: 'text-input',
@@ -117,6 +119,7 @@ export class MainMenu {
       ]),
       el('div', { className: 'dialog-actions' }, [
         button('Back', () => this._showList()),
+        button('Import save', () => this._fileInput.click()),
         button('Create and play', () => this._create(), { className: 'ui-button--primary' }),
       ]),
     ]);
@@ -128,10 +131,16 @@ export class MainMenu {
       ]),
       this._storageNote,
       el('div', { className: 'dialog-body' }, [this._worldList]),
-      el('div', { className: 'dialog-actions' }, [
-        button('New world', () => this._showCreate(), { className: 'ui-button--primary' }),
+      // One action. With saves it continues the most recent world; without one it
+      // starts a survival world on medium difficulty and the medium preset.
+      el('div', { className: 'menu-primary' }, [
+        button('Play', () => this._play(), { className: 'ui-button--primary' }),
+      ]),
+      // Everything optional lives behind these two, so the main screen stays a
+      // title and a single button.
+      el('div', { className: 'menu-secondary' }, [
+        button('World options', () => this._showCreate()),
         button('Settings', () => handlers.onSettings()),
-        button('Import save', () => this._fileInput.click()),
       ]),
     ]);
 
@@ -175,6 +184,7 @@ export class MainMenu {
    * @param {{persistent: boolean, error: Error|null}} storage
    */
   setWorlds(worlds, storage = { persistent: true, error: null }) {
+    this._worlds = Array.isArray(worlds) ? worlds : [];
     clear(this._worldList);
 
     if (!storage.persistent) {
@@ -190,7 +200,7 @@ export class MainMenu {
       this._worldList.appendChild(
         el('li', {
           className: 'empty-state',
-          text: 'No worlds yet. Create one to get started — every world is generated from a seed, so you can share a seed to share a world.',
+          text: 'No worlds yet. Press Play to start a survival run. World options lets you choose a seed, difficulty or a creative world.',
         })
       );
       return;
@@ -247,12 +257,6 @@ export class MainMenu {
           el('span', { className: 'world-entry-meta', text: meta }),
         ]),
         el('div', { className: 'world-entry-actions' }, [
-          button(defeated ? 'World lost' : 'Play', () => {
-            if (!defeated) this._handlers.onPlayWorld(world.id);
-          }, {
-            className: 'ui-button--primary',
-            disabled: defeated,
-          }),
           button('Export', () => this._handlers.onExportWorld(world.id)),
           button('Delete', () => this._confirmDelete(world), { className: 'ui-button--danger' }),
         ]),
@@ -266,6 +270,36 @@ export class MainMenu {
       typeof window.confirm !== 'function' ||
       window.confirm(`Delete "${world.name}" permanently? This cannot be undone.`);
     if (confirmed) this._handlers.onDeleteWorld(world.id);
+  }
+
+  /**
+   * The single main action.
+   *
+   * With saves it continues the most recently played world. Without one — or when
+   * every save is a lost one-life world — it starts the horror defaults directly:
+   * survival, normal difficulty, medium graphics. No dialog, no seed prompt: the
+   * first click should put the player in the world.
+   */
+  _play() {
+    const playable = (this._worlds ?? []).filter((world) => !world.hardcoreDefeated);
+    if (playable.length > 0) {
+      const recent = playable.reduce(
+        (best, world) => ((world.lastPlayed ?? 0) > (best.lastPlayed ?? 0) ? world : best),
+        playable[0]
+      );
+      this._handlers.onPlayWorld(recent.id);
+      return;
+    }
+    // Medium unless the player already picked a preset of their own: the default
+    // is medium, but a first click should not undo a deliberate graphics choice.
+    const currentPreset = this._settings.get('graphics.preset');
+    this._handlers.onCreateWorld({
+      name: suggestWorldName(),
+      seed: Math.floor(Math.random() * 0xffffffff),
+      preset: PRESET_ORDER.includes(currentPreset) ? currentPreset : 'medium',
+      mode: 'survival',
+      difficulty: 'normal',
+    });
   }
 
   _showCreate() {

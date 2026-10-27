@@ -36,6 +36,7 @@ import {
 import { TILE_NAMES, TILE_INDEX, COLOUR_BLOCK_PALETTES } from '../world/BlockTypes.js';
 import { RENDER_SHAPE, Shape, getBlock } from '../world/BlockRegistry.js';
 import { getItem } from '../items/ItemRegistry.js';
+import { MOB_SKIN_ROLES, MOB_SKIN_STYLES, mobSkinTileName } from '../config/MobSkins.js';
 import { mulberry32, clamp } from '../utils/MathUtils.js';
 
 /**
@@ -1724,6 +1725,291 @@ const TILE_PAINTERS = {
     p.set(10, 5, 180, 30, 30);
   },
 };
+
+// ------------------------------------------------------- creature skin tiles
+//
+// Four tiles per creature instead of one, driven by `config/MobSkins.js`. The
+// head tile carries a face in its middle; the border around that face is plain
+// skin, which is what the back, sides and top of a head sample — so eyes cannot
+// smear around the skull. Body tiles carry the marking pattern, limb tiles are
+// darker with a hoof band, and accent tiles are the muzzle/beak/horn colour.
+
+/** Scales a colour by `factor`, clamped to a byte. */
+function tintColour(colour, factor) {
+  return [
+    clamp(Math.round(colour[0] * factor), 0, 255),
+    clamp(Math.round(colour[1] * factor), 0, 255),
+    clamp(Math.round(colour[2] * factor), 0, 255),
+  ];
+}
+
+/** Perceived brightness, used to decide whether a face plate must be lighter. */
+function colourLuma(colour) {
+  return colour[0] * 0.299 + colour[1] * 0.587 + colour[2] * 0.114;
+}
+
+/**
+ * Draws the marking pattern of a creature onto a tile.
+ *
+ * Every pattern is deliberately low-frequency: a 16x16 tile seen from ten blocks
+ * away is a handful of screen pixels, so what has to read is the *pattern*, not
+ * its detail. High-frequency noise would just alias into grey.
+ *
+ * @param {TilePainter} p
+ * @param {import('../config/MobSkins.js').MobSkinStyle} style
+ */
+function paintMobPattern(p, style) {
+  const base = style.base;
+  const light = tintColour(base, 1.14);
+  const dark = tintColour(base, 0.82);
+  const deep = tintColour(base, 0.62);
+
+  switch (style.pattern) {
+    case 'wool':
+      p.blobs(7, 2.1, light, 5);
+      p.blobs(4, 1.5, dark, 5);
+      break;
+    case 'spots':
+      p.blobs(4, 2.6, style.accent, 7);
+      p.blobs(2, 1.5, deep, 7);
+      break;
+    case 'stripes':
+      for (let x = 1; x < 16; x += 5) {
+        p.rect(x, 0, 2, 16, deep, 255);
+        p.vLine(x + 2, 0, 15, dark);
+      }
+      break;
+    case 'feathers':
+      for (let y = 1; y < 16; y += 3) {
+        for (let x = (y % 6) - 2; x < 16; x += 3) {
+          p.set(x, y, light[0], light[1], light[2]);
+          p.set(x + 1, y + 1, dark[0], dark[1], dark[2]);
+        }
+      }
+      break;
+    case 'scales':
+      for (let y = 1; y < 16; y += 3) {
+        for (let x = (y % 6 === 1 ? 0 : 2); x < 16; x += 4) {
+          p.rect(x, y, 2, 1, light);
+          p.set(x + 1, y + 1, deep[0], deep[1], deep[2]);
+        }
+      }
+      break;
+    case 'bone':
+      // Pale bone with dark seams: the lines matter more than the surface.
+      for (const [x, y, horizontal] of [[2, 5, 1], [9, 3, 0], [4, 11, 1], [12, 9, 0]]) {
+        if (horizontal) p.hLine(y, x, x + 4, dark);
+        else p.vLine(x, y, y + 4, dark);
+      }
+      p.blobs(3, 1.3, light, 4);
+      break;
+    case 'rot':
+      p.blobs(5, 2.2, tintColour(base, 0.72), 8);
+      p.blobs(3, 1.4, [78, 44, 38], 8);
+      p.blobs(2, 1.1, [52, 64, 44], 6);
+      break;
+    case 'slime':
+      // A lighter, wetter core with a darker rim: reads as volume, not as noise.
+      p.blobs(3, 3.1, tintColour(base, 1.2), 6);
+      for (let i = 0; i < 10; i++) {
+        const x = p.int(16);
+        const y = p.int(16);
+        p.set(x, y, deep[0], deep[1], deep[2]);
+      }
+      break;
+    case 'cloth':
+      // Belt and stitching: enough to read as a garment rather than a hide.
+      p.rect(0, 10, 16, 2, deep);
+      for (let x = 1; x < 16; x += 4) p.set(x, 10, light[0], light[1], light[2]);
+      p.blobs(3, 1.8, dark, 5);
+      break;
+    case 'armour':
+      p.hLine(0, 0, 15, light);
+      p.rect(0, 4, 16, 1, dark);
+      p.rect(0, 11, 16, 1, dark);
+      for (const [x, y] of [[2, 2], [13, 2], [2, 9], [13, 9]]) p.rect(x, y, 1, 1, light);
+      break;
+    case 'glow':
+      p.blobs(4, 2.4, tintColour(style.accent, 0.8), 10);
+      p.blobs(3, 1.5, style.accent, 12);
+      p.blobs(2, 0.9, [255, 240, 180], 10);
+      break;
+    case 'void':
+      {
+        const fleck = tintColour(style.accent, 1.8);
+        p.blobs(3, 2.0, [42, 30, 58], 6);
+        for (let i = 0; i < 5; i++) {
+          p.set(p.int(16), p.int(16), fleck[0], fleck[1], fleck[2]);
+        }
+      }
+      break;
+    case 'fur':
+    default:
+      // Short vertical strokes: fur direction without high-frequency noise.
+      for (let i = 0; i < 22; i++) {
+        const x = p.int(16);
+        const y = p.int(16);
+        const colour = i % 3 === 0 ? light : dark;
+        p.set(x, y, colour[0], colour[1], colour[2]);
+        if (i % 4 === 0) p.set(x, y + 1, colour[0], colour[1], colour[2]);
+      }
+      break;
+  }
+}
+
+/**
+ * Draws the face inside the face region of a head tile.
+ *
+ * Feature placement is shared so every creature has eyes at roughly the same
+ * height — which is what lets a player recognise "that is a face looking at me"
+ * before they can resolve the species.
+ *
+ * @param {TilePainter} p
+ * @param {import('../config/MobSkins.js').MobSkinStyle} style
+ */
+function paintMobFace(p, style) {
+  const base = style.base;
+  const eye = style.eye;
+  const dark = tintColour(base, 0.6);
+  // On dark hides a lighter plate separates the features; on pale hides a darker
+  // one does. Without this, a sheep's white face and an enderman's black one
+  // would both lose their eyes at night.
+  const plateFactor = colourLuma(base) < 110 ? 1.22 : 0.9;
+  const plate = tintColour(base, plateFactor);
+  p.rect(4, 4, 8, 8, plate);
+
+  const eyeCore = style.eyeGlow ? tintColour(eye, 1.25) : eye;
+
+  switch (style.face) {
+    case 'bird':
+      p.rect(4, 5, 2, 2, eye);
+      p.rect(10, 5, 2, 2, eye);
+      if (!style.eyeGlow) p.set(4, 5, 255, 255, 255);
+      // Beak: a triangle in the accent colour, narrowing downwards.
+      p.rect(6, 8, 4, 2, style.accent);
+      p.rect(7, 10, 2, 1, style.accent);
+      p.hLine(8, 6, 9, tintColour(style.accent, 0.7));
+      break;
+
+    case 'skull':
+      // Empty sockets, no catch-light: the absence of a glint is the point.
+      p.rect(4, 6, 2, 3, [14, 12, 16]);
+      p.rect(10, 6, 2, 3, [14, 12, 16]);
+      p.rect(7, 9, 2, 2, [26, 22, 28]);
+      p.hLine(12, 5, 10, dark);
+      for (let x = 6; x <= 9; x += 2) p.rect(x, 12, 1, 1, [200, 196, 186]);
+      if (style.eyeGlow) {
+        p.set(5, 7, eyeCore[0], eyeCore[1], eyeCore[2]);
+        p.set(11, 7, eyeCore[0], eyeCore[1], eyeCore[2]);
+      }
+      break;
+
+    case 'insect':
+      // Four eyes in two rows: instantly non-mammalian at any distance.
+      p.rect(3, 5, 2, 2, eye);
+      p.rect(11, 5, 2, 2, eye);
+      p.set(6, 8, eyeCore[0], eyeCore[1], eyeCore[2]);
+      p.set(9, 8, eyeCore[0], eyeCore[1], eyeCore[2]);
+      p.rect(6, 11, 4, 1, dark);
+      break;
+
+    case 'slime':
+      p.rect(4, 6, 2, 2, eye);
+      p.rect(10, 6, 2, 2, eye);
+      p.rect(5, 10, 6, 2, dark);
+      p.rect(6, 11, 4, 1, tintColour(base, 1.25));
+      break;
+
+    case 'void':
+      // Eyes only. A shape with no visible face beyond two points of light is
+      // more unsettling than any amount of detail.
+      p.rect(4, 6, 2, 2, eyeCore);
+      p.rect(10, 6, 2, 2, eyeCore);
+      p.set(4, 6, 255, 255, 255);
+      p.set(11, 6, 255, 255, 255);
+      break;
+
+    case 'mask':
+      // A flat, angular face: creeper-style. No catch-light, hard edges.
+      p.rect(4, 6, 2, 2, eye);
+      p.rect(10, 6, 2, 2, eye);
+      p.rect(6, 9, 4, 2, eye);
+      p.rect(5, 11, 2, 1, eye);
+      p.rect(9, 11, 2, 1, eye);
+      break;
+
+    case 'humanoid':
+      // Narrow eyes with a brow above them, plus a mouth line. This reads as a
+      // person even in silhouette, which is what makes meeting one at night land.
+      p.rect(4, 6, 2, 2, eyeCore);
+      p.rect(10, 6, 2, 2, eyeCore);
+      p.hLine(5, 3, 12, dark);
+      p.hLine(10, 6, 9, dark);
+      if (!style.eyeGlow) {
+        p.set(4, 6, 255, 255, 255);
+        p.set(10, 6, 255, 255, 255);
+      }
+      break;
+
+    case 'mammal':
+    default:
+      p.rect(4, 6, 2, 2, eyeCore);
+      p.rect(10, 6, 2, 2, eyeCore);
+      if (!style.eyeGlow) {
+        p.set(4, 6, 255, 255, 255);
+        p.set(10, 6, 255, 255, 255);
+      }
+      // Muzzle and nose sit low so the head still reads as a snout from the side.
+      p.rect(5, 10, 6, 3, tintColour(style.accent, 1));
+      p.rect(7, 9, 2, 1, dark);
+      p.hLine(12, 6, 9, dark);
+      break;
+  }
+}
+
+/**
+ * Paints one atlas tile of a creature skin.
+ *
+ * @param {TilePainter} p
+ * @param {import('../config/MobSkins.js').MobSkinStyle} style
+ * @param {'head'|'body'|'limb'|'accent'} role
+ */
+function paintMobSkinTile(p, style, role) {
+  if (role === 'accent') {
+    // Extremities: muzzle, beak, horn, hoof. Slight grain so it is not a flat
+    // colour patch, and a dark edge along the bottom that reads as an underside.
+    p.fill(style.accent[0], style.accent[1], style.accent[2]).grain(7);
+    p.shade(0, 0, 16, 3, 1.08);
+    p.shade(0, 13, 16, 3, 0.82);
+    return;
+  }
+
+  const baseFactor = role === 'limb' ? 0.84 : 1;
+  const base = tintColour(style.base, baseFactor);
+  p.fill(base[0], base[1], base[2]).grain(role === 'limb' ? 7 : 10);
+
+  // Vertical falloff. Cheap, and it stops every box from looking like a decal.
+  p.shade(0, 0, 16, 2, 1.08);
+  p.shade(0, 13, 16, 3, 0.9);
+
+  paintMobPattern(p, style);
+
+  if (role === 'head') {
+    paintMobFace(p, style);
+  } else if (role === 'limb') {
+    // A darker band at the bottom of a limb: hoof, paw or hand.
+    const band = tintColour(style.accent, 0.9);
+    p.rect(0, 12, 16, 3, band);
+    p.hLine(12, 0, 15, tintColour(band, 0.7));
+  }
+}
+
+for (const [mobId, style] of Object.entries(MOB_SKIN_STYLES)) {
+  for (const role of MOB_SKIN_ROLES) {
+    TILE_PAINTERS[mobSkinTileName(mobId, role)] = (p) => paintMobSkinTile(p, style, role);
+  }
+}
+
 
 /** Paints one crop's age-dependent crossed-plant tile. */
 function paintCropStage(p, crop, stage) {

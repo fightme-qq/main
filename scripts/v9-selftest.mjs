@@ -162,7 +162,11 @@ check('world creation exposes every named mode',
   menuSource.includes("value: 'creative'") && menuSource.includes('DIFFICULTY_ORDER') &&
   menuSource.includes('Mode and difficulty'));
 check('defeated one-life saves are disabled in the world list',
-  menuSource.includes("defeated ? 'World lost' : 'Play'") && menuSource.includes('disabled: defeated'));
+  menuSource.includes("role: defeated ? 'group' : 'button'") &&
+  menuSource.includes("'aria-disabled': defeated ? 'true' : null") &&
+  menuSource.includes("defeated ? 'World lost' : null"));
+check('the main screen offers a single Play action',
+  menuSource.includes("button('Play'") && !menuSource.includes("button('New world'"));
 check('death screen removes respawn for one-life worlds',
   deathSource.includes('setVisible(this._respawnButton, !permadeath)'));
 check('the game persists a one-life defeat before showing the result',

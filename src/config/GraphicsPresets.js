@@ -251,10 +251,13 @@ export const WEATHER_BUDGETS = Object.freeze({ off: 0, low: 900, medium: 2600, h
 export const STAR_COUNTS = Object.freeze({ off: 0, low: 320, medium: 900, high: 1800 });
 
 /** Cloud plane resolution / layer count per cloud quality level. */
+// Coverage is deliberately high: the horror pass wants an overcast sky in every
+// preset, not a cheerful blue one. The differences between tiers are resolution and
+// layer count, not how much of the sky is covered.
 export const CLOUD_QUALITY = Object.freeze({
-  low: { segments: 24, layers: 1, coverage: 0.52, speed: 0.006 },
-  medium: { segments: 48, layers: 2, coverage: 0.5, speed: 0.008 },
-  high: { segments: 80, layers: 2, coverage: 0.47, speed: 0.01 },
+  low: { segments: 24, layers: 1, coverage: 0.66, speed: 0.006 },
+  medium: { segments: 48, layers: 2, coverage: 0.63, speed: 0.008 },
+  high: { segments: 80, layers: 2, coverage: 0.6, speed: 0.01 },
 });
 
 /**

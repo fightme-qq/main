@@ -261,12 +261,17 @@ export class PostProcessing {
    * Updates per-frame uniforms.
    * @param {Object} state
    * @param {number} state.underwater 0..1 submersion amount.
+   * @param {number} [state.darkness] 0 by day, 1 in full night.
    */
   updateUniforms(state) {
     if (!this._gradePass) return;
     const graphics = this._settings.values.graphics;
     const uniforms = this._gradePass.uniforms;
-    uniforms.uVignetteStrength.value = graphics.vignette ? 0.34 : 0;
+    const darkness = clamp(state.darkness ?? 0, 0, 1);
+    // The vignette is part of the horror pacing: a slim frame by day, a closed-in
+    // one at night. It is still one uniform change, no extra pass.
+    uniforms.uVignetteStrength.value = graphics.vignette ? 0.3 + darkness * 0.24 : 0;
+    uniforms.uVignetteRadius.value = 0.82 - darkness * 0.08;
     uniforms.uContrast.value = clamp(0.94 + graphics.colorGrading * 0.06, 0.8, 1.2);
     uniforms.uUnderwater.value = clamp(state.underwater ?? 0, 0, 1);
   }

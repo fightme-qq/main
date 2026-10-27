@@ -141,7 +141,7 @@ export const SOUND_EVENTS = Object.freeze({
   [GameplayEvent.CHEST_CLOSE]: { sound: 'chest.open', volume: 0.5, pitch: 0.82, positional: true },
   [GameplayEvent.FURNACE_OPEN]: { sound: 'chest.open', volume: 0.5, pitch: 0.9, positional: true },
   [GameplayEvent.DOOR_TOGGLE]: { materialAction: MaterialAction.PLACE, volume: 0.55, positional: true },
-  [GameplayEvent.CRAFT_COMPLETE]: { sound: 'ui.select', volume: 0.45 },
+  [GameplayEvent.CRAFT_COMPLETE]: { sound: 'craft.complete', volume: 0.5 },
   [GameplayEvent.ITEM_PICKUP]: { sound: 'pickup', volume: 0.45, cooldown: 0.05 },
   [GameplayEvent.BUCKET_USE]: { sound: 'item.bucket', volume: 0.7, positional: true },
 

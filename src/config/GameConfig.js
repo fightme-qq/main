@@ -197,9 +197,22 @@ export const BLOCK_TICKS = Object.freeze({
 /** Day/night cycle. */
 export const TIME = Object.freeze({
   /** Real seconds for a full in-game day at speed 1.0. */
-  secondsPerDay: 900,
-  /** Normalised time of day the world starts at (0 = midnight, 0.25 = dawn). */
-  startTime: 0.32,
+  // 20 minutes. With the LightingSystem keyframe split this is roughly 5.5 minutes
+  // of daylight, 3.5 minutes of dusk and 9 minutes of night: the horror pass wants
+  // the player to spend more time surviving the dark than enjoying the light.
+  secondsPerDay: 1200,
+  /**
+   * Normalised time of day a new world starts at.
+   *
+   * Late afternoon, not dawn: a save should open on long shadows and rising tension,
+   * with nightfall a couple of minutes away. Opening on a bright noon is the exact
+   * opposite of what the game is about.
+   */
+  startTime: 0.62,
+  /** Time the world is moved to when "start at dusk" rewrites a daylight save. */
+  duskTime: 0.62,
+  /** Morning the player wakes up to after sleeping through the night. */
+  morningTime: 0.27,
 });
 
 /** Interaction limits. */

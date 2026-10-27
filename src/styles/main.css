@@ -442,6 +442,36 @@ body.pointer-locked #game-canvas {
   list-style: none;
 }
 
+/* The main screen is a title, one Play button, and two quiet secondary actions. */
+.menu-primary {
+  display: flex;
+  margin-top: calc(var(--unit) * 2);
+}
+
+.menu-primary .ui-button {
+  flex: 1 1 auto;
+  padding-block: calc(var(--unit) * 3.4);
+  font-size: calc(1.02rem * var(--ui-scale));
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.menu-secondary {
+  display: flex;
+  gap: calc(var(--unit) * 2);
+  margin-top: calc(var(--unit) * 2);
+}
+
+.menu-secondary .ui-button {
+  flex: 1 1 0;
+  font-size: calc(0.78rem * var(--ui-scale));
+  opacity: 0.86;
+}
+
+.menu-secondary .ui-button:hover:not(:disabled) {
+  opacity: 1;
+}
+
 .world-entry {
   display: flex;
   align-items: center;

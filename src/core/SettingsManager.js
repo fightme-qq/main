@@ -93,7 +93,10 @@ export class SettingsManager {
 
     const firstRun = !stored || typeof stored !== 'object';
     if (firstRun) {
-      this.applyPreset(this._caps.suggestedPreset, { silent: true, persist: false });
+      // The game's first impression is the survival-horror one, so the default is
+      // the medium preset rather than the device probe's recommendation. The probe
+      // still clamps the preset to what the hardware can actually do.
+      this.applyPreset('medium', { silent: true, persist: false });
     } else {
       this._values = mergeIntoDefaults(stored);
       this._sanitiseAll();

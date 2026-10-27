@@ -215,6 +215,12 @@ function mob(definition) {
     dimensions: Object.freeze([
       ...(definition.dimensions ?? [definition.dimension ?? 'overworld']),
     ]),
+    // Present only on the horror roster. `null` means the legacy brain in
+    // `ai/MobBrain.js` steers the creature; the three role values switch it to
+    // `ai/HorrorBrain.js`.
+    behavior: definition.behavior ?? null,
+    // Relative chance of being chosen when the spawner picks a hostile mob.
+    spawnWeight: Math.max(0.01, Number(definition.spawnWeight) || 1),
     tileName: definition.tileName ?? `mob_${id}`,
     tile: -1,
     shape: Object.freeze([...definition.shape]),
@@ -623,6 +629,85 @@ export const MOB_DEFINITIONS = Object.freeze([
     drops: [{ item: 'string', min: 0, max: 2 }],
     spawnGroupMin: 1,
     spawnGroupMax: 2,
+  }),
+
+  // ------------------------------------------------------- horror roster roles
+  // Three creatures the horror pass is built around. They share the mob pipeline
+  // (physics, pools, saves, rendering) and differ only in `behavior`, which hands
+  // their decisions to `ai/HorrorBrain.js`.
+  mob({
+    id: 'walker',
+    displayName: 'The Walker',
+    family: MobFamily.HOSTILE,
+    // A patient stalker: it does not outrun the player, it outlasts them.
+    maxHealth: 34,
+    halfSize: 0.34,
+    height: 2.05,
+    walkSpeed: 0.85,
+    chaseSpeed: 1.95,
+    attackDamage: 6,
+    attackCooldown: 1.5,
+    attackRange: 1.9,
+    detectRange: 15,
+    loseRange: 32,
+    behavior: 'walker',
+    spawnWeight: 1.5,
+    shape: biped({ shoulderWidth: 0.46, torsoHeight: 0.8, legHeight: 0.98, headSize: 0.44, limbThickness: 0.14 }),
+    drops: [{ item: 'bone', min: 0, max: 2 }],
+    spawnGroupMin: 1,
+    spawnGroupMax: 2,
+  }),
+  mob({
+    id: 'hunter',
+    displayName: 'The Hunter',
+    family: MobFamily.HOSTILE,
+    // Built to punish running in a straight line: much faster than a sprint, but
+    // fragile, so a prepared player can turn and fight.
+    maxHealth: 26,
+    halfSize: 0.44,
+    height: 1.3,
+    eyeHeight: 1.02,
+    walkSpeed: 1.7,
+    // Slightly faster than a sprint (5.62 m/s): running in a straight line is
+    // supposed to be the wrong answer.
+    chaseSpeed: 5.8,
+    attackDamage: 5,
+    attackCooldown: 0.95,
+    attackRange: 1.8,
+    detectRange: 20,
+    loseRange: 40,
+    behavior: 'hunter',
+    spawnWeight: 1.1,
+    shape: quadruped({ bodyLength: 1.5, bodyWidth: 0.48, bodyHeight: 0.52, legHeight: 0.82, headSize: 0.44 }),
+    drops: [
+      { item: 'leather', min: 0, max: 1 },
+      { item: 'bone', min: 0, max: 1 },
+    ],
+    spawnGroupMin: 1,
+    spawnGroupMax: 1,
+  }),
+  mob({
+    id: 'stalker',
+    displayName: 'The Stalker',
+    family: MobFamily.HOSTILE,
+    // Barely a combatant: it watches from the fog and is gone when you look
+    // straight at it. The damage exists so the hostile contract stays valid.
+    maxHealth: 18,
+    halfSize: 0.3,
+    height: 2.15,
+    walkSpeed: 1.25,
+    chaseSpeed: 4.6,
+    attackDamage: 2,
+    attackCooldown: 2.4,
+    attackRange: 1.6,
+    detectRange: 26,
+    loseRange: 44,
+    behavior: 'stalker',
+    spawnWeight: 0.85,
+    shape: biped({ shoulderWidth: 0.3, torsoHeight: 0.95, legHeight: 1.15, headSize: 0.38, limbThickness: 0.1 }),
+    drops: [{ item: 'string', min: 0, max: 2 }],
+    spawnGroupMin: 1,
+    spawnGroupMax: 1,
   }),
   ...EXPANDED_MOBS,
   ...NETHER_MOBS,

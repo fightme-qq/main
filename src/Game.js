@@ -29,7 +29,7 @@
 
 import * as THREE from 'three';
 
-import { INTERACTION, TIME } from './config/GameConfig.js';
+import { INTERACTION, SEA_LEVEL, TIME } from './config/GameConfig.js';
 import { Action } from './config/KeyBindings.js';
 import { EventBus, Events, SubscriptionGroup } from './core/EventBus.js';
 import { GameLoop } from './core/GameLoop.js';
@@ -41,8 +41,7 @@ import {
   describeStorageError,
 } from './core/SaveManager.js';
 import { SettingsManager } from './core/SettingsManager.js';
-import { AudioManager, setBlockSoundGroupResolver } from './audio/AudioManager.js';
-import { EntityManager } from './entities/EntityManager.js';
+import { AudioManager, setBlockSoundGroupResolver } from './audio/AudioManager.js';import { EntityManager } from './entities/EntityManager.js';
 import { BlockBreaker } from './interaction/BlockBreaker.js';
 import { BlockParticles } from './interaction/BlockParticles.js';
 import { BlockPlacer } from './interaction/BlockPlacer.js';
@@ -51,7 +50,7 @@ import { SelectionOutline } from './interaction/SelectionOutline.js';
 import { CameraController } from './player/CameraController.js';
 import { Player } from './player/Player.js';
 import { PlayerController } from './player/PlayerController.js';
-import { LightingSystem } from './rendering/LightingSystem.js';
+import { LightingSystem, phaseAt } from './rendering/LightingSystem.js';
 import { Materials } from './rendering/Materials.js';
 import { Renderer } from './rendering/Renderer.js';
 import { ShaderManager } from './rendering/ShaderManager.js';
@@ -115,6 +114,8 @@ import { Phase4Runtime } from './progression/Phase4Runtime.js';
 import { Phase5Runtime } from './progression/Phase5Runtime.js';
 import { AdvancementSystem } from './progression/AdvancementSystem.js';
 import { getDifficulty, isPermadeathDifficulty } from './gameplay/Difficulty.js';
+import { TensionDirector } from './gameplay/TensionDirector.js';
+import { NoiseSystem } from './gameplay/NoiseSystem.js';
 import { EnderDragonRenderer } from './rendering/EnderDragonRenderer.js';
 import { EyeOfEnderRenderer } from './rendering/EyeOfEnderRenderer.js';
 import { combineOnAnvil, grindstone } from './progression/EnchantingSystem.js';
@@ -253,11 +254,19 @@ export class Game {
       bus: this.bus,
       settings: this.settings,
       capabilities: this.capabilities,
+      // Vite rewrites BASE_URL at build time; the manifest lives beside the game.
+      assetBaseUrl: import.meta.env?.BASE_URL ?? '/',
     });
     // Injected rather than imported so the audio layer stays independent of the
     // block registry.
     setBlockSoundGroupResolver((blockId) => getBlock(blockId).soundGroup);
     this.audio.attachEvents(this.subscriptions);
+    // Short-lived record of how loud the player has been, consumed by the horror
+    // roster's hearing checks.
+    this.noise = new NoiseSystem();
+    this._attachNoiseEvents();
+    // Owns the pacing of distant scares, the heartbeat and the music phase.
+    this.tension = new TensionDirector({ audio: this.audio });
 
     const uiRoot = document.getElementById('ui-root');
     if (!uiRoot) throw new Error('The UI root element is missing from the page');
@@ -1031,9 +1040,11 @@ export class Game {
     if (!spawn) return false;
     this.player.setSpawnPoint(spawn.x, spawn.y, spawn.z);
     const time = this.lighting?.timeOfDay ?? TIME.startTime;
-    const night = time >= 0.72 || time < 0.25;
+    // Sleeping wakes the player in the morning, not at the default dusk start:
+    // otherwise skipping the night would drop them straight back into sunset.
+    const night = phaseAt(time) === 'night';
     if (night) {
-      this.lighting.setTimeOfDay(TIME.startTime);
+      this.lighting.setTimeOfDay(TIME.morningTime);
       if (this.weather?.weather !== Weather.CLEAR) this.weather.setWeather(Weather.CLEAR);
       this.ui.notifications.success('Night skipped. Respawn point set.', {
         id: 'bed-sleep',
@@ -1563,7 +1574,14 @@ export class Game {
       materials: this.materials,
       world: this.world,
     });
-    this.lighting.setTimeOfDay(Number(record.timeOfDay) || TIME.startTime);
+    // A daylight save is moved to dusk when the player asked for the horror pacing:
+    // opening on a bright noon defeats the point of the whole atmosphere pass.
+    const storedTime = Number(record.timeOfDay) || TIME.startTime;
+    this.lighting.setTimeOfDay(
+      this.settings.get('gameplay.startAtDusk') && phaseAt(storedTime) === 'day'
+        ? TIME.duskTime
+        : storedTime
+    );
 
     this.sky = new SkySystem({
       scene: this.scene,
@@ -2363,6 +2381,19 @@ export class Game {
       if (this.ui.screen === Screen.LOADING) this._updateLoading(dt);
       else if (this.ui.isPlaying && !this.paused) this._updateGameplay(dt);
       else this._updatePassiveWorld(dt);
+
+      // Menus keep the music bed alive even though gameplay audio is not running.
+      if (!this.ui.isPlaying) {
+        this.tension?.update(dt, {
+          phase: 'menu',
+          daylight: this.lighting?.daylight ?? 1,
+          underground: false,
+          position: this.player?.position,
+          healthFraction: 1,
+          paused: true,
+        });
+      }
+
       // Runs for any screen state, because a container is open *while* the world
       // is still simulating and its slots must track what the furnace is doing.
       this._updateOpenContainer();
@@ -2442,10 +2473,15 @@ export class Game {
     this._updateWeather(dt);
     this.materials.update(dt);
 
+    this.noise.update(dt);
     this.entities.update(dt, player, {
       daylight: this.lighting.daylight,
       mobSpawning: this.ui.screen === Screen.PLAYING,
       attackables: this.phase5?.attackables ?? [],
+      // Horror-roster inputs: what the player just heard is derived from these.
+      noise: this.noise,
+      playerLook: this.cameraController.forwardFlat,
+      emitSound: (payload) => this.bus.emit(Events.PLAY_SOUND, payload),
     });
     this.dragonRenderer?.update(this.phase5?.activeFight ?? null, dt);
     this._updateDragonAudio(dt);
@@ -2759,7 +2795,33 @@ export class Game {
     this.weather.setWeather(raining ? Weather.RAIN : Weather.CLEAR, system.intensity, state);
   }
 
+  /**
+   * Biome name for the ambience mixer, cached for a second.
+   *
+   * `World.getBiomeNameAt` falls back to sampling noise when the chunk is not
+   * resident, and this is called from the frame loop. A second is far below the
+   * time it takes to walk out of a biome, so the cache cannot be heard.
+   *
+   * @returns {string}
+   */
+  _ambientBiomeName() {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (this._ambientBiomeAt && now - this._ambientBiomeAt < 1000) return this._ambientBiomeValue;
+    this._ambientBiomeAt = now;
+    const player = this.player;
+    this._ambientBiomeValue = player && this.world
+      ? this.world.getBiomeNameAt(Math.floor(player.position.x), Math.floor(player.position.z))
+      : 'Plains';
+    return this._ambientBiomeValue;
+  }
+
   _updateAudio() {
+    // The listener follows the camera, so positional creature sounds pan the way
+    // the player is looking rather than the way the body happens to face.
+    if (!this._audioForward) this._audioForward = new THREE.Vector3();
+    this.camera.getWorldDirection(this._audioForward);
+    this.audio.setListener(this.camera.position, this._audioForward);
+
     this.audio.updateAmbience({
       underwater: this.water.isUnderwater,
       altitude: this.player.position.y,
@@ -2768,9 +2830,32 @@ export class Game {
       paused: false,
       // Phase 4. Drives the Nether rumble in place of wind and rain.
       dimension: this.world?.dimension?.id ?? 'overworld',
+      // Horror pass: the generated library selects forest / cave / swamp layers
+      // from these, and the synthesized path simply ignores them.
+      biome: this.audio.hasLibrary ? this._ambientBiomeName() : 'Plains',
+      underground: this.player.position.y < SEA_LEVEL - 22,
+      // Lets the ambience pick the day/dusk/night drone without a second clock.
+      timeOfDay: this.lighting.timeOfDay,
     });
 
     this.audio.tickEvents(this._lastDelta ?? 0);
+
+    // The director owns the *feel* of the moment: music phase, heartbeat and the
+    // pacing of distant scares. It is silent on menus and paused screens.
+    const playing = this.ui.screen === Screen.PLAYING;
+    const underground = this.player.position.y < SEA_LEVEL - 22;
+    const phase = !playing
+      ? 'menu'
+      : phaseAt(this.lighting.timeOfDay, { underground });
+    const stats = this.player.stats;
+    this.tension.update(this._lastDelta ?? 0, {
+      phase,
+      daylight: this.lighting.daylight,
+      underground,
+      position: this.player.position,
+      healthFraction: stats && stats.maxHealth > 0 ? stats.health / stats.maxHealth : 1,
+      paused: !playing,
+    });
 
     if (this.player.jumpedThisStep) this.audio.playEvent(GameplayEvent.PLAYER_JUMP);
     if (this.player.justLanded && this.player.landingImpact > 6) {
@@ -2786,6 +2871,26 @@ export class Game {
     } else if (this.player.inWater && !this.player.onGround) {
       this.audio.playEvent(GameplayEvent.PLAYER_SWIM);
     }
+  }
+
+  /**
+   * Turns player actions into noise pulses.
+   *
+   * Radius is the gameplay-relevant number: a walk is heard at ~9 blocks, a sprint
+   * at 18, mining at 22. The hunter's hearing is 22, so sprinting past one is a
+   * decision, not a formality.
+   */
+  _attachNoiseEvents() {
+    this.subscriptions.on(this.bus, Events.PLAYER_STEP, (event) => {
+      const position = event?.position;
+      if (!position || !this.noise) return;
+      const sprint = event.sprint === true;
+      this.noise.emit(position.x, position.y, position.z, sprint ? 18 : 9, sprint ? 'sprint' : 'step');
+    });
+    this.subscriptions.on(this.bus, Events.BLOCK_BROKEN, (event) => {
+      if (!this.noise || event?.x === undefined) return;
+      this.noise.emit(event.x, event.y ?? 0, event.z, 22, 'mine');
+    });
   }
 
   _updateDragonAudio(dt) {
@@ -2819,6 +2924,9 @@ export class Game {
     if (this.destroyed) return;
     this.renderer.render(dt, {
       underwater: this.water ? this.water.getOverlayStrength() : 0,
+      // Vignette closes in as the light goes: at night the screen edges darken
+      // further, which narrows the usable field of view without a gameplay rule.
+      darkness: this.lighting ? 1 - this.lighting.daylight : 0,
     });
   }
 
@@ -3114,7 +3222,13 @@ export class Game {
     this._audioUnlockPending = true;
     try {
       await this.audio.unlock();
-      if (this.audio.unlocked) this.audio.applySettings(this.settings.values.audio);
+      if (this.audio.unlocked) {
+        this.audio.applySettings(this.settings.values.audio);
+        // Fetching and decoding the generated library is deliberately after the
+        // unlock and never awaited: audio must start on the first gesture, not
+        // after a hundred file downloads.
+        void this.audio.loadLibrary();
+      }
     } catch (error) {
       console.warn('[Game] audio could not be started:', error);
     } finally {
@@ -3303,6 +3417,9 @@ export class Game {
           : '—',
       surfaceY,
       timeOfDay: this.lighting ? this.lighting.timeOfDay : 0,
+      // Biome fog state: how far the player can actually see, and why. Useful in
+      // the debug overlay and asserted by the horror visual check.
+      atmosphere: this.lighting ? this.lighting.getAtmosphereStats() : null,
       weather: {
         ...(this.weatherSystem ? this.weatherSystem.getStats() : {}),
         state: this.weather ? this.weather.weather : 'clear',

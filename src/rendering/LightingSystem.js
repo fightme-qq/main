@@ -28,7 +28,15 @@
 
 import * as THREE from 'three';
 
+import {
+  BIOME_PROBE_INTERVAL,
+  FOG_EASE_SECONDS,
+  caveFogAmount,
+  fogBiomeTint,
+  fogVisibilityFactor,
+} from '../config/AtmosphereConfig.js';
 import { SEA_LEVEL, TIME } from '../config/GameConfig.js';
+import { DAYLIGHT_FALL, DAYLIGHT_RISE } from '../config/DayCycle.js';
 import { SHADOW_MAP_SIZES } from '../config/GraphicsPresets.js';
 import { clamp, clamp01, lerp, smoothstep } from '../utils/MathUtils.js';
 import { Block } from '../world/BlockTypes.js';
@@ -36,25 +44,44 @@ import { MAX_POINT_LIGHTS } from './ShaderManager.js';
 import { Materials } from './Materials.js';
 
 /**
- * Key frames of the day. `t` is normalised time of day where 0 is midnight,
- * 0.25 sunrise, 0.5 noon and 0.75 sunset. Values are interpolated between
- * adjacent stops, which is what makes dawn and dusk continuous instead of a
- * hard switch.
+ * Key frames of a day.
+ *
+ * The horror pass deliberately gave the night the largest share of the cycle and
+ * squeezed the day: the player should spend more time preparing for and surviving
+ * the dark than enjoying the light. `t` is normalised time of day where 0 is
+ * midnight and the cycle runs dawn -> day -> dusk -> night:
+ *
+ * | t | phase |
+ * |---|---|
+ * | 0.00 | midnight |
+ * | 0.14 | pre-dawn twilight |
+ * | 0.22 | sunrise |
+ * | 0.46 | solar noon |
+ * | 0.56 | golden hour (sun low, long shadows) |
+ * | 0.64 | late dusk |
+ * | 0.70 | nightfall |
+ *
+ * Darkness from 0.70 through 0.14 is 44% of the cycle; daylight from 0.22 to 0.52
+ * is about 28%. Values are interpolated between adjacent stops, which is what
+ * makes dawn and dusk continuous instead of a hard switch.
  */
 const SKY_KEYFRAMES = [
   {
     t: 0.0,
-    zenith: [0.016, 0.024, 0.062],
-    horizon: [0.04, 0.05, 0.1],
-    sun: [0.06, 0.07, 0.12],
-    glow: [0.08, 0.09, 0.16],
-    fog: [0.05, 0.06, 0.11],
-    skyAmbient: [0.055, 0.065, 0.11],
-    groundAmbient: [0.022, 0.024, 0.034],
+    zenith: [0.012, 0.018, 0.052],
+    horizon: [0.05, 0.056, 0.098],
+    sun: [0.05, 0.06, 0.11],
+    glow: [0.07, 0.08, 0.15],
+    // The fog is deliberately a shade brighter than moonlit geometry. That is
+    // what turns trees and buildings into readable silhouettes instead of
+    // letting the whole night collapse into one black card.
+    fog: [0.062, 0.072, 0.105],
+    skyAmbient: [0.048, 0.056, 0.1],
+    groundAmbient: [0.02, 0.023, 0.034],
     starIntensity: 1,
   },
   {
-    t: 0.21,
+    t: 0.14,
     zenith: [0.06, 0.09, 0.2],
     horizon: [0.32, 0.2, 0.22],
     sun: [0.5, 0.28, 0.2],
@@ -65,61 +92,73 @@ const SKY_KEYFRAMES = [
     starIntensity: 0.45,
   },
   {
-    t: 0.28,
-    zenith: [0.26, 0.44, 0.76],
-    horizon: [0.94, 0.62, 0.42],
-    sun: [1.0, 0.72, 0.44],
-    glow: [1.0, 0.6, 0.32],
-    fog: [0.74, 0.62, 0.58],
-    skyAmbient: [0.34, 0.34, 0.4],
-    groundAmbient: [0.14, 0.12, 0.1],
+    t: 0.22,
+    zenith: [0.2, 0.3, 0.44],
+    horizon: [0.62, 0.46, 0.4],
+    sun: [0.72, 0.55, 0.4],
+    glow: [0.8, 0.5, 0.32],
+    fog: [0.46, 0.4, 0.38],
+    skyAmbient: [0.24, 0.25, 0.3],
+    groundAmbient: [0.1, 0.1, 0.09],
     starIntensity: 0.05,
   },
   {
-    t: 0.5,
-    zenith: [0.32, 0.55, 0.92],
-    horizon: [0.68, 0.82, 0.97],
-    sun: [1.0, 0.98, 0.93],
-    glow: [1.0, 0.96, 0.86],
-    fog: [0.66, 0.78, 0.93],
-    skyAmbient: [0.46, 0.52, 0.62],
-    groundAmbient: [0.2, 0.19, 0.16],
+    t: 0.46,
+    zenith: [0.24, 0.33, 0.45],
+    horizon: [0.4, 0.44, 0.48],
+    sun: [0.66, 0.66, 0.62],
+    glow: [0.62, 0.62, 0.6],
+    fog: [0.33, 0.37, 0.42],
+    skyAmbient: [0.24, 0.27, 0.31],
+    groundAmbient: [0.14, 0.14, 0.13],
     starIntensity: 0,
   },
   {
-    t: 0.72,
-    zenith: [0.24, 0.4, 0.72],
-    horizon: [0.96, 0.58, 0.36],
-    sun: [1.0, 0.68, 0.4],
-    glow: [1.0, 0.52, 0.26],
-    fog: [0.76, 0.58, 0.5],
-    skyAmbient: [0.32, 0.3, 0.34],
-    groundAmbient: [0.13, 0.11, 0.09],
+    t: 0.56,
+    zenith: [0.18, 0.24, 0.36],
+    horizon: [0.6, 0.42, 0.34],
+    sun: [0.7, 0.5, 0.34],
+    glow: [0.72, 0.42, 0.26],
+    fog: [0.46, 0.38, 0.36],
+    skyAmbient: [0.24, 0.24, 0.28],
+    groundAmbient: [0.11, 0.1, 0.09],
     starIntensity: 0.08,
   },
   {
-    t: 0.79,
-    zenith: [0.06, 0.08, 0.2],
-    horizon: [0.3, 0.17, 0.2],
-    sun: [0.4, 0.22, 0.18],
-    glow: [0.56, 0.24, 0.18],
-    fog: [0.22, 0.16, 0.2],
-    skyAmbient: [0.14, 0.13, 0.18],
-    groundAmbient: [0.055, 0.05, 0.05],
+    t: 0.64,
+    zenith: [0.045, 0.06, 0.14],
+    horizon: [0.22, 0.14, 0.18],
+    sun: [0.3, 0.17, 0.15],
+    glow: [0.42, 0.2, 0.16],
+    fog: [0.17, 0.13, 0.17],
+    skyAmbient: [0.11, 0.11, 0.15],
+    groundAmbient: [0.045, 0.042, 0.05],
     starIntensity: 0.55,
   },
   {
-    t: 1.0,
-    zenith: [0.016, 0.024, 0.062],
-    horizon: [0.04, 0.05, 0.1],
-    sun: [0.06, 0.07, 0.12],
-    glow: [0.08, 0.09, 0.16],
-    fog: [0.05, 0.06, 0.11],
-    skyAmbient: [0.055, 0.065, 0.11],
-    groundAmbient: [0.022, 0.024, 0.034],
+    t: 0.7,
+    zenith: [0.012, 0.018, 0.052],
+    horizon: [0.05, 0.056, 0.098],
+    sun: [0.05, 0.06, 0.11],
+    glow: [0.07, 0.08, 0.15],
+    fog: [0.062, 0.072, 0.105],
+    skyAmbient: [0.048, 0.056, 0.1],
+    groundAmbient: [0.02, 0.023, 0.034],
     starIntensity: 1,
   },
 ];
+
+/**
+ * Classifies a time of day into a gameplay phase.
+ *
+ * Re-exported from `config/DayCycle` so renderer code has one import path; the
+ * implementation lives in the config module because it is shared with tests and
+ * must not drag shaders into Node.
+ *
+ * @param {number} timeOfDay
+ * @param {{underground?: boolean}} [options]
+ */
+export { phaseAt } from '../config/DayCycle.js';
 
 /** Minimum ambient so a moonlit surface is never pure black. */
 const NIGHT_FLOOR = 0.028;
@@ -184,6 +223,26 @@ export class LightingSystem {
     this.starIntensity = 0;
     /** 0 at night, 1 at midday; useful for weather and audio. */
     this.daylight = 1;
+
+    // --- atmosphere (biome fog) ---
+    /** Biome under the camera, refreshed on a timer rather than every frame. */
+    this._biomeName = 'Plains';
+    /** Seconds since the last biome probe. */
+    this._biomeTimer = 0;
+    /** True once the biome has been sampled at least once. */
+    this._biomeSampled = false;
+    /** Last position a biome probe was taken at. */
+    this._biomeProbePosition = new THREE.Vector3(0, -1000, 0);
+    /** Smoothed visibility multiplier applied to the fog far distance. */
+    this._fogVisibility = 1;
+    /** Target tint, and the smoothed value actually applied. */
+    this._fogTintTarget = [1, 1, 1];
+    this._fogTint = [1, 1, 1];
+    /**
+     * Event-driven thickening, 0..1. Used by scripted scares and storms to close
+     * the fog in temporarily without touching the biome or time curves.
+     */
+    this._fogBoost = 0;
 
     this._shadowsEnabled = false;
     this._shadowMapSize = 0;
@@ -269,10 +328,71 @@ export class LightingSystem {
     this._updateSunDirection();
     this._updateSceneLights();
     this._updateShadowCamera(cameraPosition);
+    this._updateAtmosphere(dt, cameraPosition);
     this._updateFog(cameraPosition);
     this._updatePointLights(cameraPosition);
 
     this._materials.applyLighting(this._lightingState);
+  }
+
+  /**
+   * Samples the biome and eases the fog visibility towards its target.
+   *
+   * The probe is on a timer *and* gated on movement: standing still in a forest
+   * should cost one column sample, not one per frame, and `getBiomeNameAt` falls
+   * back to noise sampling when the chunk is not resident.
+   *
+   * @param {number} dt Seconds.
+   * @param {THREE.Vector3} cameraPosition
+   */
+  _updateAtmosphere(dt, cameraPosition) {
+    const preset = this._settings.values.graphics.preset ?? 'medium';
+    const interval = BIOME_PROBE_INTERVAL[preset] ?? 0.3;
+    this._biomeTimer += dt;
+
+    if (this._biomeTimer >= interval) {
+      this._biomeTimer = 0;
+      const moved = this._biomeProbePosition.distanceToSquared(cameraPosition) > 16;
+      if (moved || !this._biomeSampled) {
+        const name = this._world?.getBiomeNameAt?.(cameraPosition.x, cameraPosition.z);
+        if (typeof name === 'string' && name.length > 0) this._biomeName = name;
+        this._biomeProbePosition.copy(cameraPosition);
+        this._biomeSampled = true;
+        this._fogTintTarget = fogBiomeTint(this._biomeName);
+      }
+    }
+
+    const target = fogVisibilityFactor({
+      biomeName: this._biomeName,
+      daylight: this.daylight,
+      y: cameraPosition.y,
+      extraDensity: this._fogBoost,
+    });
+    // Frame-rate independent easing: the same visual settle time at 30 and 144 fps.
+    const ease = clamp01(1 - Math.exp(-dt / FOG_EASE_SECONDS));
+    this._fogVisibility += (target - this._fogVisibility) * ease;
+    for (let channel = 0; channel < 3; channel++) {
+      this._fogTint[channel] += (this._fogTintTarget[channel] - this._fogTint[channel]) * ease;
+    }
+  }
+
+  /**
+   * Temporarily thickens the fog, for storms and scripted events.
+   * @param {number} amount 0 (clear) to 1 (very thick).
+   */
+  setFogBoost(amount) {
+    this._fogBoost = clamp01(amount);
+  }
+
+  /** Atmosphere diagnostics for the debug overlay and the self-test. */
+  getAtmosphereStats() {
+    return {
+      biome: this._biomeName,
+      visibility: this._fogVisibility,
+      fogBoost: this._fogBoost,
+      fogNear: this._lightingState.fogNear,
+      fogFar: this._lightingState.fogFar,
+    };
   }
 
   /** Interpolates the keyframe table at the current time of day. */
@@ -302,8 +422,11 @@ export class LightingSystem {
     this.skyAmbient.g = Math.max(this.skyAmbient.g, NIGHT_FLOOR);
     this.skyAmbient.b = Math.max(this.skyAmbient.b, NIGHT_FLOOR * 1.3);
 
-    // 0 at night, 1 during the day, ramping across dawn and dusk.
-    this.daylight = t < 0.5 ? smoothstep(0.2, 0.32, t) : 1 - smoothstep(0.68, 0.8, t);
+    // 0 at night, 1 during the day. Dawn and dusk are narrow on purpose: the long
+    // ramp is the night itself, which the fog and the ambience follow.
+    this.daylight = this.timeOfDay < 0.5
+      ? smoothstep(DAYLIGHT_RISE[0], DAYLIGHT_RISE[1], this.timeOfDay)
+      : 1 - smoothstep(DAYLIGHT_FALL[0], DAYLIGHT_FALL[1], this.timeOfDay);
   }
 
   /**
@@ -314,8 +437,9 @@ export class LightingSystem {
    * both more natural and much kinder to shadow-map stability.
    */
   _updateSunDirection() {
-    // angle 0 at midnight, π/2 at sunrise... choose so 0.25 -> sunrise in +X.
-    const angle = (this.timeOfDay - 0.25) * Math.PI * 2;
+    // Sun path matches the keyframes: rises at 0.22, sets at 0.70, so "dusk" on the
+    // colour ramp is the sun actually going down rather than a separate clock.
+    const angle = ((this.timeOfDay - 0.22) * Math.PI) / 0.48;
     const tilt = 0.32;
     const x = Math.cos(angle);
     const y = Math.sin(angle);
@@ -327,17 +451,20 @@ export class LightingSystem {
     const above = clamp01(this.sunDirection.y * 3 + 0.15) * (1 - this._weatherDarkening * 0.75);
 
     this.sun.color.copy(this.sunColor);
-    this.sun.intensity = 2.6 * above;
+    // Overcast, not sunny: a strong key light is what makes a world read as a
+    // cheerful sandbox, so the daytime sun is deliberately weak and flat.
+    this.sun.intensity = 2.0 * above;
     this.sun.visible = this.sun.intensity > 0.01;
 
     this.moon.color.setRGB(0.68, 0.74, 0.95);
-    this.moon.intensity = 0.22 * (1 - above);
+    // A touch of moonlight is what separates a silhouette from a black shape.
+    this.moon.intensity = 0.3 * (1 - above);
     this.moon.position.copy(this.moonDirection).multiplyScalar(120);
     this.moon.visible = this.moon.intensity > 0.01;
 
     this.hemisphere.color.copy(this.skyAmbient).multiplyScalar(2.2);
     this.hemisphere.groundColor.copy(this.groundAmbient).multiplyScalar(2.2);
-    this.hemisphere.intensity = 1.15;
+    this.hemisphere.intensity = 1.02;
 
     // Water reads colder at night and warmer at golden hour.
     this._scratchColorA.copy(this.skyAmbient).multiplyScalar(1.4);
@@ -417,7 +544,18 @@ export class LightingSystem {
       state.fogStrength = 1;
       state.caveAmbient = CAVE_AMBIENT_BASE + 0.08;
     } else {
+      const visibility = this._fogVisibility;
+      const cave = caveFogAmount(cameraPosition.y);
+      const tint = this._fogTint;
+
       state.fogColor.copy(this.fogColor);
+      // A fraction of the biome tint only: a fully tinted fog reads as a colour
+      // filter over the game rather than as air.
+      state.fogColor.setRGB(
+        state.fogColor.r * lerp(1, tint[0], 0.45),
+        state.fogColor.g * lerp(1, tint[1], 0.45),
+        state.fogColor.b * lerp(1, tint[2], 0.45)
+      );
       if (this._weatherDarkening > 0) {
         // Rain desaturates the fog towards grey and pulls it much closer, which
         // is what makes a downpour feel enclosed.
@@ -427,14 +565,31 @@ export class LightingSystem {
           this._weatherDarkening * 0.8
         );
       }
-      state.fogNear = lerp(range.near, range.near * 0.35, this._weatherDarkening);
-      state.fogFar = lerp(range.far, range.far * 0.55, this._weatherDarkening);
+
+      // Visibility is the survival-horror lever: at midnight in a swamp the far
+      // plane is roughly half of what the render distance would allow. Near stays
+      // tied to it so the transition remains gradual instead of a grey wall.
+      const visibilityWithWeather = visibility * lerp(1, 0.62, this._weatherDarkening);
+      const caveFactor = lerp(1, 0.5, cave);
+      state.fogFar = Math.max(24, range.far * visibilityWithWeather * caveFactor);
+      // Near falls faster than far, so reduced visibility reads as *enclosure*
+      // (mist starting a few metres out) rather than as a distant grey wall.
+      state.fogNear = clamp(
+        range.near * lerp(0.22, 1, visibilityWithWeather) * lerp(1, 0.3, cave),
+        3,
+        state.fogFar * 0.6
+      );
+      // Underground fog is darker as well as closer, otherwise a lit cave would
+      // sit inside a bright grey box.
+      state.fogColor.multiplyScalar(lerp(1, 0.45, cave));
       state.fogStrength = range.strength;
       state.caveAmbient = CAVE_AMBIENT_BASE;
     }
 
     state.brightness = clamp(graphics.brightness, 0.5, 2);
-    state.saturation = clamp(graphics.colorGrading, 0, 2) * (1 - this._weatherDarkening * 0.35);
+    // A permanent slight desaturation: horror wants damp, cold colours even at noon.
+    // The player's grading slider still adds to or subtracts from this baseline.
+    state.saturation = clamp(graphics.colorGrading, 0, 2) * 0.82 * (1 - this._weatherDarkening * 0.35);
     state.sunColor
       .copy(this.sunColor)
       .multiplyScalar(clamp01(this.sunDirection.y * 2.4 + 0.1) * (1 - this._weatherDarkening * 0.8));

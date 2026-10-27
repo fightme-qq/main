@@ -34,6 +34,9 @@ export const SoundCategory = Object.freeze({
   AMBIENT: 'ambient',
   BLOCKS: 'blocks',
   WEATHER: 'weather',
+  PLAYER: 'player',
+  CREATURES: 'creatures',
+  HORROR: 'horror',
   UI: 'ui',
 });
 
@@ -712,6 +715,24 @@ export function createSoundCatalogue() {
     category: SoundCategory.UI,
     gain: 0.28,
     render: blip({ startFrequency: 1250, endFrequency: 1250, gain: 0.4, decayRate: 60 }),
+  };
+  // Fallback for the generated craft-success sound. It exists in the synthesized
+  // catalogue so the event table stays valid — and so crafting keeps a sound when
+  // the file library has not been generated or failed to load.
+  catalogue['craft.complete'] = {
+    duration: 0.26,
+    category: SoundCategory.UI,
+    gain: 0.38,
+    pitchVariance: 0.05,
+    render: impact({
+      frequency: 430,
+      q: 2.1,
+      decayRate: 24,
+      noise: 0.32,
+      thump: 0.22,
+      thumpFrequency: 168,
+      brightness: 0.34,
+    }),
   };
   catalogue['ui.back'] = {
     duration: 0.09,

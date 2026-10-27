@@ -404,6 +404,128 @@ const BASE_MOB_SKELETONS = {
       ...commonClips('body'),
     },
   },
+  // -------------------------------------------------- horror roster rigs
+  // The three roles are readable by silhouette alone: a lanky shambler, a long
+  // low predator, and a too-tall watcher with hands that hang past its knees.
+  walker: {
+    skeleton: {
+      name: 'walker',
+      scale: 1,
+      bones: biped({
+        hipY: 0.92,
+        torsoHeight: 0.82,
+        torsoWidth: 0.42,
+        torsoDepth: 0.26,
+        headSize: 0.44,
+        armLength: 1.05,
+        armThickness: 0.13,
+        legLength: 1,
+        legThickness: 0.15,
+      }),
+    },
+    clips: {
+      idle: { name: 'idle', duration: 4.2, loop: LoopMode.LOOP, tracks: {
+        torso: { rotation: swing(d(2.2), 4.2, 1) },
+        armLeft: { rotation: [{ time: 0, value: [d(-6), 0, 0] }, { time: 2.1, value: [d(-11), 0, 0] }, { time: 4.2, value: [d(-6), 0, 0] }] },
+        armRight: { rotation: [{ time: 0, value: [d(-9), 0, 0] }, { time: 2.1, value: [d(-4), 0, 0] }, { time: 4.2, value: [d(-9), 0, 0] }] },
+        head: { rotation: [{ time: 0, value: [d(6), 0, 0] }, { time: 1.4, value: [d(2), d(18), 0] }, { time: 2.8, value: [d(7), d(-12), 0] }, { time: 4.2, value: [d(6), 0, 0] }] },
+      } },
+      walk: { name: 'walk', duration: 1.45, loop: LoopMode.LOOP, tracks: {
+        legLeft: { rotation: swing(d(24), 1.45, 0) },
+        legRight: { rotation: swing(d(24), 1.45, 1) },
+        armLeft: { rotation: [{ time: 0, value: [d(-64), 0, d(-4)] }, { time: 0.72, value: [d(-72), 0, d(-2)] }, { time: 1.45, value: [d(-64), 0, d(-4)] }] },
+        armRight: { rotation: [{ time: 0, value: [d(-70), 0, d(4)] }, { time: 0.72, value: [d(-62), 0, d(2)] }, { time: 1.45, value: [d(-70), 0, d(4)] }] },
+        torso: { rotation: [{ time: 0, value: [d(-4), 0, 0] }, { time: 1.45, value: [d(-4), 0, 0] }] },
+      } },
+      run: { name: 'run', duration: 0.82, loop: LoopMode.LOOP, tracks: {
+        legLeft: { rotation: swing(d(40), 0.82, 0) },
+        legRight: { rotation: swing(d(40), 0.82, 1) },
+        armLeft: { rotation: swing(d(26), 0.82, 1) },
+        armRight: { rotation: swing(d(26), 0.82, 0) },
+        torso: { rotation: [{ time: 0, value: [d(-11), 0, 0] }, { time: 0.82, value: [d(-11), 0, 0] }] },
+      } },
+      attack: { name: 'attack', duration: 0.72, loop: LoopMode.CLAMP, tracks: {
+        armLeft: { rotation: [{ time: 0, value: [d(-64), 0, 0] }, { time: 0.18, value: [d(-150), 0, d(-10)] }, { time: 0.4, value: [d(-18), 0, 0] }, { time: 0.72, value: [d(-64), 0, 0] }] },
+        armRight: { rotation: [{ time: 0, value: [d(-70), 0, 0] }, { time: 0.18, value: [d(-140), 0, d(10)] }, { time: 0.4, value: [d(-14), 0, 0] }, { time: 0.72, value: [d(-70), 0, 0] }] },
+        torso: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.18, value: [d(-16), 0, 0] }, { time: 0.72, value: [0, 0, 0] }] },
+      } },
+      ...commonClips('root'),
+    },
+  },
+  hunter: {
+    skeleton: {
+      name: 'hunter',
+      scale: 1,
+      bones: quadruped({
+        bodyLength: 1.5,
+        bodyHeight: 0.52,
+        bodyWidth: 0.48,
+        bodyY: 0.82,
+        headSize: 0.44,
+        headForward: 0.98,
+        headUp: 0.14,
+        legLength: 0.82,
+        legThickness: 0.14,
+        tail: true,
+      }),
+    },
+    clips: {
+      idle: { name: 'idle', duration: 2.6, loop: LoopMode.LOOP, tracks: {
+        body: { position: bob(0.02, 2.6) },
+        head: { rotation: [{ time: 0, value: [d(-4), 0, 0] }, { time: 1.3, value: [d(4), d(14), 0] }, { time: 2.6, value: [d(-4), 0, 0] }] },
+      } },
+      // Low, long strides rather than a trot: the silhouette should read as
+      // something that runs on four legs and closes distance fast.
+      ...quadrupedGaits(d(34), 0.58, d(52), 0.34),
+      attack: { name: 'attack', duration: 0.5, loop: LoopMode.CLAMP, tracks: {
+        head: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.14, value: [d(26), 0, 0] }, { time: 0.3, value: [d(-16), 0, 0] }, { time: 0.5, value: [0, 0, 0] }] },
+        body: { position: [{ time: 0, value: [0, 0, 0] }, { time: 0.14, value: [0, 0.04, 0.16] }, { time: 0.5, value: [0, 0, 0] }] },
+      } },
+      ...commonClips('body'),
+    },
+  },
+  stalker: {
+    skeleton: {
+      name: 'stalker',
+      scale: 1,
+      bones: biped({
+        hipY: 1.02,
+        torsoHeight: 0.96,
+        torsoWidth: 0.3,
+        torsoDepth: 0.22,
+        headSize: 0.38,
+        armLength: 1.28,
+        armThickness: 0.09,
+        legLength: 1.16,
+        legThickness: 0.1,
+      }),
+    },
+    clips: {
+      // Almost no motion: a standing figure that only tilts its head. The lack of
+      // idle animation is the point — it looks like it is waiting for you.
+      idle: { name: 'idle', duration: 5.4, loop: LoopMode.LOOP, tracks: {
+        head: { rotation: [{ time: 0, value: [d(4), 0, 0] }, { time: 1.8, value: [d(2), d(22), d(3)] }, { time: 3.6, value: [d(6), d(-16), d(-2)] }, { time: 5.4, value: [d(4), 0, 0] }] },
+        armLeft: { rotation: [{ time: 0, value: [d(-3), 0, d(-2)] }, { time: 5.4, value: [d(-3), 0, d(-2)] }] },
+      } },
+      walk: { name: 'walk', duration: 1.7, loop: LoopMode.LOOP, tracks: {
+        legLeft: { rotation: swing(d(19), 1.7, 0) },
+        legRight: { rotation: swing(d(19), 1.7, 1) },
+        armLeft: { rotation: swing(d(8), 1.7, 1) },
+        armRight: { rotation: swing(d(8), 1.7, 0) },
+      } },
+      run: { name: 'run', duration: 0.7, loop: LoopMode.LOOP, tracks: {
+        legLeft: { rotation: swing(d(44), 0.7, 0) },
+        legRight: { rotation: swing(d(44), 0.7, 1) },
+        armLeft: { rotation: swing(d(30), 0.7, 1) },
+        armRight: { rotation: swing(d(30), 0.7, 0) },
+        torso: { rotation: [{ time: 0, value: [d(-14), 0, 0] }, { time: 0.7, value: [d(-14), 0, 0] }] },
+      } },
+      attack: { name: 'attack', duration: 0.6, loop: LoopMode.CLAMP, tracks: {
+        armRight: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.16, value: [d(-120), 0, 0] }, { time: 0.6, value: [0, 0, 0] }] },
+      } },
+      ...commonClips('root'),
+    },
+  },
   // Dedicated final-boss rig: articulated neck, independent wings and a
   // three-segment tail. This is intentionally not an alias to a biped.
   ender_dragon: {

@@ -16,12 +16,19 @@
     "selftest:v7": "node scripts/v7-selftest.mjs",
     "selftest:v8": "node scripts/v8-selftest.mjs",
     "selftest:v9": "node scripts/v9-selftest.mjs",
+    "selftest:horror": "node scripts/horror-selftest.mjs",
+    "visual:horror": "node scripts/horror-visual-check.mjs",
+    "audio:generate": "node scripts/audio/generate.mjs",
+    "audio:qc": "node scripts/audio/qc.mjs",
+    "audio:browser": "node scripts/audio-browser-check.mjs",
+    "mobs:browser": "node scripts/mob-ai-check.mjs",
+    "menu:browser": "node scripts/menu-check.mjs",
     "smoketest": "node scripts/build-smoketest.mjs",
     "smoketest:browser": "node scripts/browser-smoketest.mjs",
     "icons": "node scripts/make-icons.mjs",
     "serve:dist": "node scripts/serve.mjs",
     "audit": "node scripts/audit-imports.mjs",
-    "check": "npm run audit && npm run selftest && npm run selftest:phase3 && npm run selftest:phase4 && npm run selftest:phase5 && npm run selftest:v7 && npm run selftest:v8 && npm run selftest:v9 && npm run build"
+    "check": "npm run audit && npm run selftest && npm run selftest:phase3 && npm run selftest:phase4 && npm run selftest:phase5 && npm run selftest:v7 && npm run selftest:v8 && npm run selftest:v9 && npm run selftest:horror && npm run build"
   },
   "dependencies": {
     "three": "^0.185.1"

@@ -1,0 +1,20 @@
+{
+  "startedAt": "2026-10-27T15:05:11.506Z",
+  "endpoint": "https://api.elevenlabs.io/v1/sound-generation",
+  "musicEndpoint": "https://api.elevenlabs.io/v1/music",
+  "outputFormat": "mp3_44100_128",
+  "requested": 1,
+  "generated": [
+    {
+      "id": "player_footstep_grass_03",
+      "bytes": 13835,
+      "elapsedMs": 2421,
+      "sha256": "142e4eca4f049ffb7bdb5bb05af19d68a1f5e4a024cf0dc84b08274e30cdf26a"
+    }
+  ],
+  "skipped": [],
+  "failed": [],
+  "finishedAt": "2026-10-27T15:05:13.931Z",
+  "elapsedMs": 2425,
+  "totalBytes": 13835
+}

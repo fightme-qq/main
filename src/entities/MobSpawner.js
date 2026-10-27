@@ -149,6 +149,33 @@ function randomInt(random, min, max) {
   return min + Math.floor(random() * (max - min + 1));
 }
 
+/**
+ * Picks a spawn id, weighted by `definition.spawnWeight`.
+ *
+ * Uniform choice made the horror roster as likely as a zombie, which floods a night
+ * with the wrong creature. Weights let the walker be the common threat, the hunter
+ * rarer, and the stalker rarest.
+ *
+ * @param {ReadonlyArray<string>} ids
+ * @param {() => number} random
+ * @returns {string|null}
+ */
+export function pickWeightedMob(ids, random) {
+  if (ids.length === 0) return null;
+  let total = 0;
+  const weights = ids.map((id) => {
+    const weight = getMob(id)?.spawnWeight ?? 1;
+    total += weight;
+    return weight;
+  });
+  let roll = random() * total;
+  for (let index = 0; index < ids.length; index++) {
+    roll -= weights[index];
+    if (roll <= 0) return ids[index];
+  }
+  return ids[ids.length - 1];
+}
+
 export class MobSpawner {
   constructor(seed = 1, difficulty = 'normal') {
     this._randomState = (seed ^ 0x9e3779b9) >>> 0 || 1;
@@ -223,7 +250,7 @@ export class MobSpawner {
     const basePool = family === MobFamily.HOSTILE ? HOSTILE_MOBS : PASSIVE_MOBS;
     const ids = mobsForDimension(basePool, dimensionId);
     if (ids.length === 0) return 0;
-    const definition = getMob(ids[Math.floor(nextRandom(this) * ids.length)]);
+    const definition = getMob(pickWeightedMob(ids, () => nextRandom(this)));
     if (!definition) return 0;
 
     const centre = this._findPosition(world, player, definition, daylight);

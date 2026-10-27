@@ -24,6 +24,7 @@ import { END_BLOCK_DESCRIPTORS, END_TILE_NAMES } from './EndBlocks.js';
 import { UTILITY_BLOCK_DESCRIPTORS, UTILITY_TILE_NAMES } from './UtilityBlocks.js';
 import { V7_BLOCK_DESCRIPTORS, V7_TILE_NAMES } from './V7Blocks.js';
 import { V8_BLOCK_DESCRIPTORS, V8_TILE_NAMES } from './V8Blocks.js';
+import { MOB_SKIN_TILE_NAMES } from './MobSkinTiles.js';
 
 /** Shared dye palette used by colour blocks and their procedural atlas painters. */
 export const COLOUR_BLOCK_PALETTES = Object.freeze({
@@ -354,6 +355,17 @@ export const TILE_NAMES = Object.freeze([
   'mob_silverfish',
   'mob_shulker',
   'mob_ender_dragon',
+  // Per-part creature skins. One tile per body role (head, body, limb, accent)
+  // instead of one stretched tile per creature, so faces, hooves and markings
+  // exist at all. Appended last for the same compatibility reason as everything
+  // above, and derived from the palette table so the two can never drift.
+  ...MOB_SKIN_TILE_NAMES,
+  // Legacy single-tile names for the horror roster. The renderer uses the per-role
+  // tiles above, but `MobTypes` still exposes `tileName` for every creature and the
+  // atlas contract requires that name to exist.
+  'mob_walker',
+  'mob_hunter',
+  'mob_stalker',
 ]);
 
 /** Fast tile-name to index lookup. */

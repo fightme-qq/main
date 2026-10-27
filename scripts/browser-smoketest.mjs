@@ -319,7 +319,8 @@ try {
     check('no fatal error screen', (await page.$('.fatal-error')) === null);
     check(
       'main menu is rendered',
-      (await page.locator('button', { hasText: 'New world' }).count()) > 0
+      (await page.locator('button', { hasText: 'Play' }).count()) > 0 &&
+        (await page.locator('button', { hasText: 'World options' }).count()) > 0
     );
     check(
       'production build does not leak window.game',
@@ -351,7 +352,7 @@ try {
   await page.waitForFunction(() => typeof window.game !== 'undefined', null, { timeout: 30000 });
   check('instrumented build exposes window.game', true);
 
-  await page.locator('button', { hasText: 'New world' }).first().click();
+  await page.locator('button', { hasText: 'World options' }).first().click();
   await page.waitForTimeout(300);
   check(
     'the create-world dialog opens',

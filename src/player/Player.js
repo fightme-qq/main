@@ -555,6 +555,9 @@ export class Player {
         blockId: groundBlock,
         inWater: this.inWater,
         position: this.position,
+        // The mixer uses this to make a sprint audible over a walk without a
+        // second set of recordings.
+        sprint: this.intent.sprint === true,
       });
     }
   }

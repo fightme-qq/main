@@ -19,6 +19,7 @@ import {
 import { findVoxelPath, nextPathDirection } from './ai/VoxelNavigator.js';
 import { StatusEffectController } from './StatusEffects.js';
 import { GoalSelector, passiveAnimalGoals, hostileMeleeGoals } from './ai/MobGoals.js';
+import { HorrorBrain, HorrorState } from './ai/HorrorBrain.js';
 
 const HURT_COOLDOWN = 0.45;
 const DEATH_SECONDS = 0.65;
@@ -187,6 +188,17 @@ export class MobEntity extends Entity {
     this._pathIndex = 0;
     this._pathTimer = nextRandom(this) * NAV_REPATH_SECONDS;
     this._pathGoal = '';
+
+    // The horror roster runs on its own decision layer; everything else keeps the
+    // legacy brain. `null` is the common case and costs nothing.
+    this.horrorBrain = definition.behavior
+      ? new HorrorBrain({
+          behavior: definition.behavior,
+          definition,
+          random: () => nextRandom(this),
+        })
+      : null;
+    this.horrorBrain?.reset(x, z);
 
     this.facing = nextRandom(this) * Math.PI * 2;
     this.animationPhase = nextRandom(this) * Math.PI * 2;
@@ -417,24 +429,63 @@ export class MobEntity extends Entity {
       this._targetVisible = this._targetVisible && this.enderAngry;
     }
 
-    const intent = decideMobIntent({
-      definition: this.definition,
-      mob: this,
-      target,
-      currentState: this.brainState,
-      wanderDirectionX: this.wanderDirectionX,
-      wanderDirectionZ: this.wanderDirectionZ,
-      wanderTime: this.wanderTime,
-      fleeTime: this.fleeTime,
-      fleeFrom: this.fleeFrom,
-      targetVisible: this._targetVisible,
-      random: () => nextRandom(this),
-    });
+    const targetDistance = target ? Math.hypot(target.x - this.x, target.z - this.z) : Infinity;
+
+    let intent;
+    if (this.horrorBrain) {
+      // Horror roles own their own pacing. The brain never sees the world: it gets
+      // distance, visibility, the player's look vector and the loudest nearby noise.
+      const noise = context.noise?.loudestNear?.(
+        this.x,
+        this.z,
+        this.definition.behavior === 'hunter' ? 24 : 12,
+      ) ?? null;
+      // The simulation steps at 60 Hz, but a laggy frame hands this method the whole
+      // frame delta. A brain that ages its own timers by 0.5 s in one go can skip
+      // the detect beat entirely, so horror decisions see a bounded step.
+      const loopDt = Math.min(dt, 0.06);
+      intent = this.horrorBrain.update(loopDt, {
+        mob: this,
+        target,
+        targetVisible: this._targetVisible,
+        distance: targetDistance,
+        playerLook: context.playerLook ?? null,
+        noise,
+        attackCooldown: this.attackCooldown,
+        emitSound: (id, options = {}) => {
+          context.emitSound?.({
+            name: id,
+            volume: options.volume ?? 0.8,
+            position: { x: this.x, y: this.y + this.eyeHeight * 0.85, z: this.z },
+            maxDistance: 48,
+          });
+        },
+      });
+      if (intent.despawn) {
+        // The stalker leaves when it is out of sight. No drops, no death event: as
+        // far as the world is concerned it was never quite there.
+        this.kill();
+        return;
+      }
+    } else {
+      intent = decideMobIntent({
+        definition: this.definition,
+        mob: this,
+        target,
+        currentState: this.brainState,
+        wanderDirectionX: this.wanderDirectionX,
+        wanderDirectionZ: this.wanderDirectionZ,
+        wanderTime: this.wanderTime,
+        fleeTime: this.fleeTime,
+        fleeFrom: this.fleeFrom,
+        targetVisible: this._targetVisible,
+        random: () => nextRandom(this),
+      });
+    }
 
     // Goal components now run in the live AI loop. The legacy brain continues
     // producing the low-level steering vector while the selector arbitrates
     // reusable high-level controls (float, panic, attack, wander, look).
-    const targetDistance = target ? Math.hypot(target.x - this.x, target.z - this.z) : Infinity;
     this.goalSelector.update({
       mob: this,
       target: this.family === MobFamily.HOSTILE && this._targetVisible ? target : null,
@@ -454,16 +505,28 @@ export class MobEntity extends Entity {
     this.brainState = intent.state;
     this.wanderDirectionX = intent.directionX;
     this.wanderDirectionZ = intent.directionZ;
-    this.wanderTime = intent.nextWanderTime;
+    this.wanderTime = intent.nextWanderTime ?? 0;
 
     let movementX = intent.directionX;
     let movementZ = intent.directionZ;
-    if (intent.state === MobBrainState.CHASE && target && intent.speed > 0) {
-      const navigation = this._navigationDirection(dt, world, target, movementX, movementZ);
-      if (navigation) {
-        movementX = navigation.x;
-        movementZ = navigation.z;
+    // The horror brain asks for a destination (`navigateTo`) rather than a raw
+    // direction, so searching and investigating can path around walls instead of
+    // pressing into them.
+    const navigationTarget = intent.navigateTo
+      ?? (intent.state === MobBrainState.CHASE ? target : null);
+    if (navigationTarget && intent.speed > 0) {
+      let directX = movementX;
+      let directZ = movementZ;
+      if (Math.hypot(directX, directZ) < 1e-5) {
+        const dx = navigationTarget.x - this.x;
+        const dz = navigationTarget.z - this.z;
+        const length = Math.hypot(dx, dz) || 1;
+        directX = dx / length;
+        directZ = dz / length;
       }
+      const navigation = this._navigationDirection(dt, world, navigationTarget, directX, directZ);
+      movementX = navigation ? navigation.x : directX;
+      movementZ = navigation ? navigation.z : directZ;
     } else {
       this._pathTimer = Math.max(0, this._pathTimer - dt);
       if (intent.state !== MobBrainState.FLEE) this._clearPath();
@@ -484,6 +547,14 @@ export class MobEntity extends Entity {
       while (delta < -Math.PI) delta += Math.PI * 2;
       this.facing += delta * Math.min(1, dt * 9);
       this._jumpObstacle(world, movementX, movementZ);
+    } else if (intent.faceTarget && target) {
+      // Standing still but watching: a stalker that freezes should still track the
+      // player with its whole body, not just its head.
+      const desiredFacing = Math.atan2(target.x - this.x, target.z - this.z);
+      let delta = desiredFacing - this.facing;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      this.facing += delta * Math.min(1, dt * 4);
     }
 
     if (this.inLiquid && intent.speed > 0) this.velocityY = Math.max(this.velocityY, 2.8);
@@ -768,7 +839,12 @@ export class MobEntity extends Entity {
     this.health = this.maxHealth * savedHealthRatio;
     this.attackCooldown = Math.max(0, Number(data.attackCooldown) || 0);
     this.hurtCooldown = Math.max(0, Number(data.hurtCooldown) || 0);
-    if (Object.values(MobBrainState).includes(data.brainState)) this.brainState = data.brainState;
+    if (
+      Object.values(MobBrainState).includes(data.brainState) ||
+      Object.values(HorrorState).includes(data.brainState)
+    ) {
+      this.brainState = data.brainState;
+    }
     this.wanderTime = Math.max(0, Number(data.wanderTime) || 0);
     this.wanderDirectionX = Math.max(-1, Math.min(1, Number(data.wanderDirectionX) || 0));
     this.wanderDirectionZ = Math.max(-1, Math.min(1, Number(data.wanderDirectionZ) || 0));

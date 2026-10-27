@@ -84,14 +84,24 @@ export const DEFAULT_SETTINGS = Object.freeze({
     ambient: 0.6,
     blocks: 0.9,
     weather: 0.7,
+    player: 0.8,
+    creatures: 0.85,
+    horror: 0.7,
     ui: 0.6,
     muteWhenUnfocused: true,
   },
   gameplay: {
-    mode: 'creative',
+    // Survival by default: this is a survival horror game, not a building toy.
+    mode: 'survival',
     reach: 5,
     dayCycleSpeed: 1,
     pauseDayCycle: false,
+    /**
+     * Open every world in late afternoon instead of midday. On by default: the
+     * horror pacing needs dusk as the first thing the player sees, and a bright
+     * noon is the fastest way to make the game feel like a sandbox again.
+     */
+    startAtDusk: true,
     allowFly: true,
     showCoordinates: true,
     autosaveInterval: SAVE.defaultAutosaveSeconds,
@@ -561,6 +571,12 @@ export const SETTINGS_SCHEMA = Object.freeze([
       { key: 'audio.ambient', type: 'range', label: 'Ambient', min: 0, max: 1, step: 0.05, format: percent },
       { key: 'audio.blocks', type: 'range', label: 'Blocks', min: 0, max: 1, step: 0.05, format: percent },
       { key: 'audio.weather', type: 'range', label: 'Weather', min: 0, max: 1, step: 0.05, format: percent },
+      // Separate sliders are the point of the horror mix: a player who wants to
+      // hear a creature breathing behind them can turn the creatures up without
+      // raising the whole world.
+      { key: 'audio.player', type: 'range', label: 'Player', min: 0, max: 1, step: 0.05, format: percent },
+      { key: 'audio.creatures', type: 'range', label: 'Creatures', min: 0, max: 1, step: 0.05, format: percent },
+      { key: 'audio.horror', type: 'range', label: 'Horror events', min: 0, max: 1, step: 0.05, format: percent },
       { key: 'audio.ui', type: 'range', label: 'Interface', min: 0, max: 1, step: 0.05, format: percent },
       { key: 'audio.muteWhenUnfocused', type: 'toggle', label: 'Mute when unfocused' },
     ],
@@ -598,6 +614,7 @@ export const SETTINGS_SCHEMA = Object.freeze([
         format: multiplier,
       },
       { key: 'gameplay.pauseDayCycle', type: 'toggle', label: 'Freeze time of day' },
+      { key: 'gameplay.startAtDusk', type: 'toggle', label: 'Open worlds at dusk' },
       { key: 'gameplay.allowFly', type: 'toggle', label: 'Allow flying' },
       { key: 'gameplay.showCoordinates', type: 'toggle', label: 'Show coordinates' },
       {

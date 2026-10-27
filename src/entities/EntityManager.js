@@ -40,6 +40,7 @@ import { FallingBlockEntity } from './FallingBlockEntity.js';
 import { MobEntity } from './MobEntity.js';
 import { MobRenderer } from './MobRenderer.js';
 import { MobSpawner } from './MobSpawner.js';
+import { mobSound } from './MobSounds.js';
 import { ProjectileEntity } from './ProjectileEntity.js';
 import { raycastBox } from '../interaction/CombatSystem.js';
 import { getDifficulty } from '../gameplay/Difficulty.js';
@@ -759,6 +760,12 @@ export class EntityManager {
   }
 
   _consumeMobEvents(mob, player) {
+    // The horror roster has recorded voices; everyone else keeps the generic
+    // synthesized reactions. Either way the sound is placed at the creature, so a
+    // growl behind the player actually comes from behind the player.
+    const behavior = mob.definition?.behavior ?? null;
+    const voicePosition = behavior ? { x: mob.x, y: mob.y + mob.eyeHeight * 0.85, z: mob.z } : null;
+
     if (mob.justHurt) {
       mob.justHurt = false;
       this._bus.emit(Events.MOB_HURT, {
@@ -767,16 +774,29 @@ export class EntityManager {
         health: mob.health,
         maxHealth: mob.maxHealth,
       });
-      this._bus.emit(Events.PLAY_SOUND, {
-        name: 'mob.hurt',
-        volume: 0.58,
-        pitch: 0.85 + Math.random() * 0.3,
-      });
+      const hurtSound = mobSound(behavior, 'hurt');
+      if (hurtSound) {
+        this._bus.emit(Events.PLAY_SOUND, {
+          name: hurtSound,
+          volume: 0.85,
+          position: voicePosition,
+          maxDistance: 48,
+        });
+      } else {
+        this._bus.emit(Events.PLAY_SOUND, {
+          name: 'mob.hurt',
+          volume: 0.58,
+          pitch: 0.85 + Math.random() * 0.3,
+        });
+      }
     }
 
     if (mob.justAttacked) {
       mob.justAttacked = false;
-      this._bus.emit(Events.PLAY_SOUND, { name: 'mob.attack', volume: 0.62 });
+      const attackSound = mobSound(behavior, 'attack');
+      this._bus.emit(Events.PLAY_SOUND, attackSound
+        ? { name: attackSound, volume: 0.9, position: voicePosition, maxDistance: 48 }
+        : { name: 'mob.attack', volume: 0.62 });
     }
 
     if (!mob.justDied) return;
@@ -805,7 +825,10 @@ export class EntityManager {
       drops,
       killedByPlayer: Boolean(mob.killedByPlayer),
     });
-    this._bus.emit(Events.PLAY_SOUND, { name: 'mob.death', volume: 0.7 });
+    const deathSound = mobSound(behavior, 'death');
+    this._bus.emit(Events.PLAY_SOUND, deathSound
+      ? { name: deathSound, volume: 0.9, position: voicePosition, maxDistance: 48 }
+      : { name: 'mob.death', volume: 0.7 });
   }
 
   /** Writes live entity transforms into the instance buffers. */
