@@ -187,7 +187,10 @@ function classify(pixels) {
  * @returns {Promise<{pixels: number[][], scroll: number|null}>}
  */
 async function sampleCentre(page) {
-  const shot = await page.screenshot({ type: 'png' });
+  // SwiftShader on a CI runner can take far longer than Playwright's default 30 s
+  // to flatten a 1280x720 WebGL frame; the resulting timeout was the only reason
+  // the smoke test failed in Actions while passing locally.
+  const shot = await page.screenshot({ type: 'png', timeout: 120000 });
   const base64 = shot.toString('base64');
   const pixels = await page.evaluate(async (data) => {
     const image = new Image();
