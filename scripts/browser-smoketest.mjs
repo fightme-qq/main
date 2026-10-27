@@ -421,6 +421,9 @@ try {
       // is exactly the regression this test guards.
       'gameplay.pauseDayCycle': true,
     });
+    // Noon, not the horror default dusk: at dusk the surface is dark enough for
+    // hostile spawning, and this suite spends ten minutes in survival later on.
+    window.game.lighting.setTimeOfDay(0.4);
   });
   await page.waitForTimeout(3000);
   await shoot('03-playing');
@@ -879,6 +882,25 @@ try {
   check('the player is alive again', afterRespawn.dead === false);
   check('the respawn point is above the void', afterRespawn.y > 0, String(afterRespawn.y));
   check('the player does not respawn inside a block', afterRespawn.inSolid === false);
+
+  // The remaining sections are instrumentation, not a survival run. Since the
+  // horror roster arrived a hunter can kill the test subject while a furnace
+  // smelts, which is correct gameplay and a flaky test, so keep the subject fed
+  // and clear hostiles that get close.
+  await page.evaluate(() => {
+    window.__smokeGuard = setInterval(() => {
+      const g = window.game;
+      const stats = g.player?.stats;
+      if (stats && !stats.isDead) {
+        stats.health = Math.max(stats.health, 18);
+        stats.hunger = Math.max(stats.hunger, 18);
+      }
+      for (const mob of g.entities.mobs) {
+        if (!mob.alive || mob.definition?.family !== 'hostile') continue;
+        if (Math.hypot(mob.x - g.player.position.x, mob.z - g.player.position.z) < 14) mob.kill();
+      }
+    }, 1000);
+  });
 
   const permadeathUi = await page.evaluate(async () => {
     const g = window.game;
