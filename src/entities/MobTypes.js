@@ -148,6 +148,10 @@ function biped({ shoulderWidth = 0.5, torsoHeight = 0.62, legHeight = 0.72, head
  * @property {ReadonlyArray<Object>} shape Body plan boxes.
  * @property {ReadonlyArray<{item: string, min: number, max: number, chance: number}>} drops
  * @property {boolean} despawns Whether it vanishes when far from the player.
+ * @property {boolean} giant True for creatures the voxel collision path cannot
+ *   drive: their body box spans thousands of blocks, so a foot-probe ground
+ *   solve and their own presence brain replace the ordinary AI. See
+ *   `GiantPresence.js`.
  * @property {number} spawnGroupMin
  * @property {number} spawnGroupMax
  * @property {ReadonlyArray<string>} breedingItems Items that tempt/feed/breed this mob.
@@ -237,6 +241,12 @@ function mob(definition) {
     // Hostiles despawn when the player leaves; farm animals do not, or a player
     // would return to an empty pen.
     despawns: definition.despawns ?? hostile,
+    // A giant is not a scale multiplier on a normal mob: its collision volume is
+    // larger than the terrain features it would have to walk through, so the
+    // ordinary `Entity._blocked` sweep (one voxel test per block of body box)
+    // would both cost thousands of lookups a frame and pin it forever against
+    // the first hill. `giant: true` routes it to the foot-probe solver.
+    giant: definition.giant === true,
     spawnGroupMin: definition.spawnGroupMin ?? 1,
     spawnGroupMax: definition.spawnGroupMax ?? (hostile ? 2 : 3),
     breedingItems: Object.freeze([...(definition.breedingItems ?? [])]),
@@ -712,6 +722,50 @@ export const MOB_DEFINITIONS = Object.freeze([
   ...EXPANDED_MOBS,
   ...NETHER_MOBS,
   ...END_MOBS,
+  // The colossus: a landmark creature, not a spawn-table inhabitant. `boss: true`
+  // keeps the ambient spawner out of it; `giant: true` switches it to the
+  // foot-probe physics and the presence brain in `GiantPresence.js`.
+  //
+  // It is deliberately neutral rather than hostile: this build ships the *statue*
+  // half of the Shadow-of-the-Colossus idea -- a sixty block figure that stands
+  // in the landscape, breathes, turns its head and roars -- and a creature that
+  // cannot yet be fought should not count against the hostile cap or chase the
+  // player into the fog. Health is high enough that it is effectively not a
+  // damage race in this version, but hitting it still registers.
+  mob({
+    id: 'colossus',
+    displayName: 'Stone Colossus',
+    family: MobFamily.NEUTRAL,
+    boss: true,
+    giant: true,
+    dimension: 'overworld',
+    maxHealth: 2400,
+    halfSize: 7.4,
+    height: 62,
+    eyeHeight: 54,
+    walkSpeed: 0.35,
+    chaseSpeed: 0.6,
+    attackDamage: 0,
+    attackRange: 9,
+    detectRange: 96,
+    loseRange: 220,
+    despawns: false,
+    // The legacy flat body plan still has to exist and describe the silhouette;
+    // the renderer draws the authored `colossus` rig instead. Kept deliberately
+    // coarse: it is only read by code that predates skeletal rigs.
+    shape: Object.freeze([
+      box([15, 6, 9], [0, 31, 0], Limb.BODY, 0.92),
+      box([20, 18, 11], [0, 41, 0], Limb.BODY, 1),
+      box([9, 9, 9], [0, 56.5, 0], Limb.HEAD, 1.08),
+      box([7, 16, 8], [-5, 21.5, 0], Limb.LEG_A, 0.95),
+      box([7, 16, 8], [5, 21.5, 0], Limb.LEG_B, 0.95),
+      box([5.6, 15, 5.6], [-11.2, 39.2, 0], Limb.DETAIL, 0.96),
+      box([5.6, 15, 5.6], [11.2, 39.2, 0], Limb.DETAIL, 0.96),
+    ]),
+    drops: [],
+    spawnGroupMin: 1,
+    spawnGroupMax: 1,
+  }),
 ]);
 
 /** Ids of every mob, in definition order. */

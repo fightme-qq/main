@@ -841,6 +841,125 @@ export function createSoundCatalogue() {
     },
   };
 
+  // ------------------------------------------------------------ the colossus
+  //
+  // Written for distance rather than for proximity. A sixty block creature heard
+  // from two hundred blocks away has lost almost everything above a couple of
+  // hundred hertz to air and ground, so nearly all of the energy here sits below
+  // 120 Hz: the sub of the throat, the mass of the body, and a thin band of grave
+  // for the texture. The slow attacks matter for the same reason -- the panner
+  // attenuates a transient so hard that a fast roar arrives as a click.
+  //
+  // The roar's 0.9 s attack is timed against the `roar` clip: the head starts
+  // lifting on the same frame the sound starts, and the jaw is fully open when
+  // the sound reaches its peak.
+
+  catalogue['mob.colossus.roar'] = {
+    duration: 5.2,
+    category: SoundCategory.CREATURES,
+    gain: 1,
+    pitchVariance: 0.015,
+    render: (data, sampleRate, random) => {
+      const throat = createLowPass(0.006);
+      const gravel = createResonator(sampleRate, 168, 9);
+      const chest = createResonator(sampleRate, 96, 4);
+      let phase = 0;
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sampleRate;
+        // The note falls as the breath runs out: 54 Hz to about 33 over five
+        // seconds, plus a slow wobble so it never sounds like a synth sweep.
+        const frequency = 54 - t * 4.2 + Math.sin(t * 2.1) * 0.8;
+        phase += (Math.PI * 2 * frequency) / sampleRate;
+        // Glottal-ish pulse: three harmonics with falling weight.
+        const pulse = Math.sin(phase) + 0.42 * Math.sin(phase * 2) + 0.2 * Math.sin(phase * 3);
+        const attack = Math.min(1, t / 0.9);
+        const release = Math.min(1, Math.max(0, (5.2 - t) / 0.45));
+        const body = Math.exp(-Math.max(0, t - 1.1) * 0.5);
+        // Tearing at roughly 7 Hz: this is what reads as an animal rather than
+        // as a foghorn, and it survives distance far better than detail does.
+        const tear = 0.82 + 0.18 * Math.sin(t * 44 + Math.sin(t * 3.3) * 2.4);
+        const noise = random() * 2 - 1;
+        const air = throat(noise) * 9 + gravel(noise * 0.5) * 0.5 + chest(noise * 0.08) * 0.9;
+        data[i] = clamp((pulse * 0.55 * tear + air) * attack * body * release * 0.62, -1, 1);
+      }
+    },
+  };
+
+  catalogue['mob.colossus.groan'] = {
+    duration: 3.6,
+    category: SoundCategory.CREATURES,
+    gain: 0.62,
+    pitchVariance: 0.03,
+    render: (data, sampleRate, random) => {
+      const weight = createResonator(sampleRate, 58, 5);
+      const stone = createResonator(sampleRate, 210, 12);
+      const grit = createResonator(sampleRate, 1350, 22);
+      let low = 0;
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sampleRate;
+        // Stone does not slide smoothly; it moves in small catches. A quantised
+        // LFO is the cheapest way to get that ratcheting quality.
+        const catchPhase = 0.5 + 0.5 * Math.sin(Math.floor(t * 5.5) * 12.9898);
+        const slide = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 3.1));
+        const noise = random() * 2 - 1;
+        low = low * 0.995 + noise * 0.005;
+        const envelope = Math.min(1, t / 0.5) * Math.min(1, Math.max(0, (3.6 - t) / 1.1));
+        data[i] = clamp(
+          (weight(low * 40) * 1.6 + stone(noise * 0.4) * 0.5 * slide + grit(noise) * 0.12 * catchPhase) *
+            envelope * 0.5,
+          -1,
+          1
+        );
+      }
+    },
+  };
+
+  catalogue['mob.colossus.step'] = {
+    duration: 3.4,
+    category: SoundCategory.CREATURES,
+    gain: 0.95,
+    pitchVariance: 0.02,
+    render: (data, sampleRate, random) => {
+      const rumble = createLowPass(0.0012);
+      const debris = createResonator(sampleRate, 900, 9);
+      let phase = 0;
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sampleRate;
+        // Impact: 46 Hz falling to 26 within a third of a second. The drop is
+        // what gives the thud weight; a flat sine just sounds like a bass note.
+        const frequency = 26 + 20 * Math.exp(-t * 7);
+        phase += (Math.PI * 2 * frequency) / sampleRate;
+        const thump = Math.sin(phase) * Math.exp(-t * 1.6);
+        const noise = random() * 2 - 1;
+        const body = rumble(noise) * 26 * Math.exp(-t * 0.7);
+        const grit = debris(noise) * 0.22 * Math.exp(-t * 2.4);
+        const tail = Math.min(1, Math.max(0, (3.4 - t) / 0.6));
+        data[i] = clamp((thump * 0.9 + body * 0.5 + grit) * tail * 0.82, -1, 1);
+      }
+    },
+  };
+
+  catalogue['mob.colossus.breath'] = {
+    duration: 4.4,
+    category: SoundCategory.CREATURES,
+    gain: 0.5,
+    pitchVariance: 0.05,
+    render: (data, sampleRate, random) => {
+      const air = createLowPass(0.02);
+      const chest = createResonator(sampleRate, 46, 6);
+      for (let i = 0; i < data.length; i++) {
+        const t = i / sampleRate;
+        // In for two seconds, out for the rest of it.
+        const inhale = Math.sin(Math.min(1, t / 2.1) * Math.PI) ** 1.5;
+        const exhale = Math.sin(Math.min(1, Math.max(0, (t - 2.3) / 2.0)) * Math.PI) ** 1.5;
+        const noise = random() * 2 - 1;
+        const sample = air(noise) * (inhale * 7 + exhale * 5.5) +
+          chest(noise * 0.03) * (inhale + exhale) * 0.5;
+        data[i] = clamp(sample * 0.4, -1, 1);
+      }
+    },
+  };
+
   catalogue['music.dragon'] = {
     duration: 12,
     category: SoundCategory.MUSIC,

@@ -20,6 +20,7 @@ import { findVoxelPath, nextPathDirection } from './ai/VoxelNavigator.js';
 import { StatusEffectController } from './StatusEffects.js';
 import { GoalSelector, passiveAnimalGoals, hostileMeleeGoals } from './ai/MobGoals.js';
 import { HorrorBrain, HorrorState } from './ai/HorrorBrain.js';
+import { GiantPresence, settleGiantOnGround } from './GiantPresence.js';
 
 const HURT_COOLDOWN = 0.45;
 const DEATH_SECONDS = 0.65;
@@ -199,6 +200,16 @@ export class MobEntity extends Entity {
         })
       : null;
     this.horrorBrain?.reset(x, z);
+
+    // Giants bypass the goal selector, the legacy brain and voxel navigation
+    // entirely. `GiantPresence` is their whole decision layer: a clock for the
+    // vocalisations and a very slow gaze. See GiantPresence.js for the reasons
+    // the ordinary systems cannot be scaled up.
+    this.presence = definition.giant
+      ? new GiantPresence({ random: () => nextRandom(this) })
+      : null;
+    this.emote = null;
+    this.emoteTimer = 0;
 
     this.facing = nextRandom(this) * Math.PI * 2;
     this.animationPhase = nextRandom(this) * Math.PI * 2;
@@ -393,11 +404,20 @@ export class MobEntity extends Entity {
 
     if (this.isDead) {
       this.deathTimer -= dt;
-      // Keep gravity active during the short death animation so a creature hit
-      // on a ledge does not freeze in mid-air.
-      super.update(dt, world);
+      // A giant's body box spans thousands of voxels. Running the ordinary
+      // voxel sweep for a corpse that never moves horizontally would cost more
+      // in one frame than the rest of the roster does in a minute.
+      if (!this.definition.giant) super.update(dt, world);
       this.movementAmount = 0;
       if (this.deathTimer <= 0) this.kill();
+      return;
+    }
+
+    // Giants own their own simulation. Everything below this point -- sight
+    // rays, goal arbitration, voxel pathfinding, obstacle jumps, daylight
+    // burning, despawn -- assumes a creature of ordinary size.
+    if (this.definition.giant) {
+      this._tickGiant(dt, world, player, context);
       return;
     }
 
@@ -607,6 +627,73 @@ export class MobEntity extends Entity {
 
     this._tickDaylight(dt, world, context.daylight ?? 0);
     this._tickFireContact(dt, world);
+    this._tickDespawn(player);
+  }
+
+  /**
+   * Advances a creature whose size puts it outside the normal mob systems.
+   *
+   * Deliberately tiny: the presence decides what the head is doing and what the
+   * throat is doing, the foot probe decides where the ground is, and nothing
+   * else runs. No sight test, no path, no goal selector, no daylight burn, and
+   * no horizontal collision -- a standing colossus has no horizontal motion to
+   * collide with.
+   *
+   * @param {number} dt
+   * @param {Object} world
+   * @param {Object|null} player
+   * @param {Object} context
+   */
+  _tickGiant(dt, world, player, context) {
+    this.age += dt;
+    this.inLiquid = false;
+    this.movementAmount = 0;
+    this.velocityX = 0;
+    this.velocityZ = 0;
+
+    this.emoteTimer = Math.max(0, this.emoteTimer - dt);
+    if (this.emoteTimer <= 0) this.emote = null;
+
+    let distance = Infinity;
+    let bearing = null;
+    if (player?.position) {
+      const dx = player.position.x - this.x;
+      const dz = player.position.z - this.z;
+      distance = Math.hypot(dx, dz);
+      // The body never turns, so the whole "looking at you" performance happens
+      // on the neck: the bearing is clamped by the presence to what it can do.
+      let delta = Math.atan2(dx, dz) - this.facing;
+      while (delta > Math.PI) delta -= Math.PI * 2;
+      while (delta < -Math.PI) delta += Math.PI * 2;
+      bearing = delta;
+    }
+
+    const result = this.presence.update(dt, { distance, bearing });
+    this.headYaw = result.headYaw;
+
+    if (result.emote) {
+      this.emote = result.emote;
+      this.emoteTimer = Math.max(this.emoteTimer, result.emoteSeconds);
+    }
+
+    for (const event of result.events) {
+      // The roar comes from the head, eighty blocks up; the weight shift comes
+      // from the feet. Placing both at the entity origin would make a creature
+      // this tall sound like it was standing at ground level shouting.
+      const y = event.atHead
+        ? this.y + this.height * 0.86
+        : this.y + Math.min(6, this.height * 0.12);
+      context.emitSound?.({
+        name: event.name,
+        volume: event.volume,
+        maxDistance: event.maxDistance,
+        refDistance: event.refDistance,
+        rolloff: event.rolloff,
+        position: { x: this.x, y, z: this.z },
+      });
+    }
+
+    settleGiantOnGround(world, this, dt);
     this._tickDespawn(player);
   }
 

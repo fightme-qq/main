@@ -85,6 +85,7 @@ import {
 import { isDimensionImplemented } from './world/DimensionGenerators.js';
 import { Dimension } from './world/DimensionConfig.js';
 import { END_ARRIVAL_PLATFORM } from './world/EndGenerator.js';
+import { findColossusSite } from './world/ColossusSite.js';
 import {
   pressButton,
   rotateRepeaterDelay,
@@ -1762,6 +1763,12 @@ export class Game {
     }
 
     this.entities.fromJSON(record.entities);
+    // The colossus is placed once the ground under its chosen site has streamed
+    // in, so placement cannot happen here: `_updateColossus` retries while the
+    // world fills in. A loaded save already carries its own in `record.entities`.
+    this._colossusSettled = false;
+    this._colossusSearchTimer = 0;
+    this._colossusAnnounce = false;
     this._lastStatPosition = {
       x:this.player.position.x, y:this.player.position.y, z:this.player.position.z,
     };
@@ -2378,6 +2385,7 @@ export class Game {
     this._handleGlobalActions();
 
     if (this.world) {
+      this._updateColossus(dt);
       if (this.ui.screen === Screen.LOADING) this._updateLoading(dt);
       else if (this.ui.isPlaying && !this.paused) this._updateGameplay(dt);
       else this._updatePassiveWorld(dt);
@@ -2446,6 +2454,55 @@ export class Game {
     this.ui.setLoadingProgress(1, 'Ready');
     this.ui.startPlaying();
     this.ui.mobileControls.setFlyMode(this.player.flying);
+  }
+
+  /**
+   * Places the standing colossus, once, when the ground under it exists.
+   *
+   * Placement is deliberately deferred rather than done in `_startWorld`: the
+   * site search only accepts positions whose chunks are loaded, and at world
+   * start almost nothing is. The timer stops the search from running a few
+   * thousand surface reads every frame while the player stands somewhere the
+   * terrain has already been found unsuitable (an ocean spawn, for instance).
+   *
+   * A world that already contains a colossus -- a reload, or a save made after
+   * it was placed -- keeps that one and never spawns a second.
+   *
+   * @param {number} dt
+   */
+  _updateColossus(dt) {
+    if (!this.world || !this.entities || !this.player) return;
+
+    if (this._colossusAnnounce && this.ui?.isPlaying) {
+      this._colossusAnnounce = false;
+      this.ui.notifications.info(
+        'Something enormous is standing out there. You can hear it breathing.',
+        { id: 'colossus-nearby', duration: 9000 }
+      );
+    }
+    if (this._colossusSettled) return;
+
+    if (this.entities.mobs.some((mob) => mob.alive && mob.mobId === 'colossus')) {
+      this._colossusSettled = true;
+      return;
+    }
+
+    this._colossusSearchTimer -= dt;
+    if (this._colossusSearchTimer > 0) return;
+    this._colossusSearchTimer = 0.75;
+
+    // Straight ahead first: the first look at the world should contain it.
+    const forward = this.cameraController?.forwardFlat;
+    const heading = forward ? Math.atan2(forward.x, forward.z) : 0;
+    const site = findColossusSite(this.world, this.player.position.x, this.player.position.z, { heading });
+    if (!site) return;
+
+    const mob = this.entities.spawnMob('colossus', site.x, site.y, site.z, 0x5eed5eed);
+    if (!mob) return;
+    mob.facing = site.facing;
+    mob.persistent = true;
+    this._colossusSettled = true;
+    this._colossusAnnounce = true;
   }
 
   /** The full gameplay update. */

@@ -366,6 +366,9 @@ export const TILE_NAMES = Object.freeze([
   'mob_walker',
   'mob_hunter',
   'mob_stalker',
+  // The colossus. Appended after everything else for the same compatibility
+  // reason as the rest of this tail: existing atlas indices must not shift.
+  'mob_colossus',
 ]);
 
 /** Fast tile-name to index lookup. */

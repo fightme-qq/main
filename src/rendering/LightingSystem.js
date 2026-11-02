@@ -259,6 +259,7 @@ export class LightingSystem {
       fogStrength: 1,
       caveAmbient: CAVE_AMBIENT_BASE,
       brightness: 1,
+      daylight: 1,
       saturation: 1,
       waterTint: this.waterTint,
     };
@@ -587,6 +588,10 @@ export class LightingSystem {
     }
 
     state.brightness = clamp(graphics.brightness, 0.5, 2);
+    // Creatures use this to keep a readable footlight after dusk: the mob shader
+    // has no baked sky light of its own, so it needs the same day/night lever the
+    // terrain gets from its vertex light.
+    state.daylight = this.daylight;
     // A permanent slight desaturation: horror wants damp, cold colours even at noon.
     // The player's grading slider still adds to or subtracts from this baseline.
     state.saturation = clamp(graphics.colorGrading, 0, 2) * 0.82 * (1 - this._weatherDarkening * 0.35);

@@ -190,6 +190,122 @@ function biped({
   ];
 }
 
+/**
+ * A stone colossus: a hunched humanoid roughly sixty blocks tall.
+ *
+ * Authored in world units rather than scaled from `biped`, because the whole
+ * point of the creature is that its proportions are *wrong* for a person: the
+ * legs are short and columnar, the chest is a slab, the arms hang almost to the
+ * knees, and the head sits low between the shoulders. Scaling a human 35x would
+ * have produced exactly the "normal mob made bigger" silhouette that reads as a
+ * bug instead of a landmark.
+ *
+ * Feet rest on y = 0 and the crown tops out near y = 61, so the collision height
+ * in `MobTypes` and the model agree without a scale factor. Bones bend where a
+ * statue would have been carved to bend: hips, knees, shoulders, elbows, neck and
+ * jaw, which is everything the shared clips and the roar emote need.
+ */
+function colossusBody() {
+  const bones = [
+    { name: 'root', parent: null, pivot: [0, 0, 0], boxes: [] },
+    {
+      name: 'hips',
+      parent: 'root',
+      pivot: [0, 31, 0],
+      boxes: [
+        box([15, 6, 9], [0, 0, 0], 0.92),
+        box([16, 2, 10.4], [0, 2.6, 0], 0.98),
+      ],
+    },
+    {
+      name: 'torso',
+      parent: 'hips',
+      pivot: [0, 9, 0],
+      boxes: [
+        box([20, 18, 11], [0, 1, 0], 1),
+        box([13, 2, 11.6], [0, 8.4, 0], 1.02),
+        box([9, 10, 1.2], [0, 1, 6], 1.06),
+        box([15, 11, 1.4], [0, -1, -6.1], 0.9),
+      ],
+    },
+    { name: 'neck', parent: 'torso', pivot: [0, 9.6, 0], boxes: [box([6.5, 3, 6.5], [0, 1.5, 0], 0.96)] },
+    {
+      name: 'head',
+      parent: 'neck',
+      pivot: [0, 3, 0],
+      boxes: [
+        box([9, 9, 9], [0, 3.4, 0], 1.08),
+        box([9.8, 1.1, 9.8], [0, 7.6, 0], 1.02),
+        box([2.6, 1.2, 1], [0, 4.6, 4.9], 1.2),
+        box([1.4, 1.4, 1], [0, 2.2, 4.9], 0.94),
+      ],
+    },
+    { name: 'jaw', parent: 'head', pivot: [0, -1.2, 2.6], boxes: [box([6.6, 2.6, 6], [0, -1, 1.6], 0.9)] },
+  ];
+
+  for (const side of [-1, 1]) {
+    const suffix = side < 0 ? 'Left' : 'Right';
+    bones.push(
+      {
+        name: `shoulder${suffix}`,
+        parent: 'torso',
+        pivot: [side * 10.6, 7.8, 0],
+        boxes: [
+          box([5.4, 5, 9.6], [0, 0, 0], 1.04),
+          box([6, 1.6, 10], [0, 2.6, 0], 0.96),
+        ],
+      },
+      {
+        name: `arm${suffix}`,
+        parent: `shoulder${suffix}`,
+        pivot: [0, -0.6, 0],
+        boxes: [box([5.6, 15, 5.6], [0, -7.5, 0], 0.96)],
+      },
+      {
+        name: `forearm${suffix}`,
+        parent: `arm${suffix}`,
+        pivot: [0, -15, 0],
+        boxes: [box([5, 14, 5], [0, -7, 0], 0.94)],
+      },
+      {
+        name: `fist${suffix}`,
+        parent: `forearm${suffix}`,
+        pivot: [0, -14, 0],
+        boxes: [
+          box([6.2, 5, 6.2], [0, -2, 0], 0.9),
+          box([6.4, 1.4, 6.4], [0, -4.2, 0], 0.84),
+        ],
+      },
+      {
+        name: `leg${suffix}`,
+        parent: 'hips',
+        pivot: [side * 5, -1.5, 0],
+        boxes: [box([7.4, 16, 8.4], [0, -8, 0], 0.95)],
+      },
+      {
+        name: `shin${suffix}`,
+        parent: `leg${suffix}`,
+        pivot: [0, -16, 0],
+        boxes: [
+          box([6.6, 12, 7.4], [0, -6, 0], 0.92),
+          box([7.2, 2.2, 8], [0, -11, 0], 0.86),
+        ],
+      },
+      {
+        name: `foot${suffix}`,
+        parent: `shin${suffix}`,
+        pivot: [0, -12, 0],
+        boxes: [
+          box([8.6, 3.6, 12], [0, 0.3, 2.4], 0.86),
+          box([8.8, 1.2, 3.4], [0, 1.4, 6.6], 0.9),
+        ],
+      },
+    );
+  }
+
+  return bones;
+}
+
 /** A small two-legged bird with wings. */
 function bird() {
   return [
@@ -570,6 +686,149 @@ const BASE_MOB_SKELETONS = {
       ...commonClips('body'),
     },
   },
+  // The colossus. Every timing here is deliberately slower than a player expects:
+  // a twelve second breath, a five second roar, a seven second collapse. Motion
+  // that a human body would make in a second has to take five at this size, or
+  // the creature reads as a toy being moved rather than as a mountain that
+  // decided to stand up.
+  colossus: {
+    skeleton: { name: 'colossus', scale: 1, bones: colossusBody() },
+    clips: {
+      idle: {
+        name: 'idle',
+        duration: 12,
+        loop: LoopMode.LOOP,
+        tracks: {
+          // The chest rises about half a block over six seconds. At this scale
+          // that is the smallest motion that still reads from the ground.
+          torso: {
+            position: bob(0.55, 12),
+            rotation: [{ time: 0, value: [0, 0, 0] }, { time: 6, value: [d(0.6), d(0.5), d(0.4)] }, { time: 12, value: [0, 0, 0] }],
+          },
+          shoulderLeft: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 3, value: [0, 0, d(1.7)] }, { time: 6, value: [0, 0, 0] }, { time: 9, value: [0, 0, d(-0.7)] }, { time: 12, value: [0, 0, 0] }] },
+          shoulderRight: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 3, value: [0, 0, d(-1.7)] }, { time: 6, value: [0, 0, 0] }, { time: 9, value: [0, 0, d(0.7)] }, { time: 12, value: [0, 0, 0] }] },
+          head: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 4, value: [d(1.6), d(4.5), 0] }, { time: 8, value: [d(-1.2), d(-3.4), d(0.8)] }, { time: 12, value: [0, 0, 0] }] },
+          armLeft: { rotation: swing(d(0.9), 12) },
+          armRight: { rotation: swing(d(0.9), 12, 1) },
+          hips: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 6, value: [d(0.3), 0, d(0.3)] }, { time: 12, value: [0, 0, 0] }] },
+        },
+      },
+      // A stomp, not a stride: the hips drop on the footfall, the torso leans
+      // into it, and the arms swing a fraction of what a human's would.
+      walk: {
+        name: 'walk',
+        duration: 2.9,
+        loop: LoopMode.LOOP,
+        tracks: {
+          legLeft: { rotation: swing(d(12), 2.9, 0) },
+          legRight: { rotation: swing(d(12), 2.9, 1) },
+          shinLeft: { rotation: swing(d(-7), 2.9, 1) },
+          shinRight: { rotation: swing(d(-7), 2.9, 0) },
+          hips: {
+            position: [
+              { time: 0, value: [0, -0.45, 0] },
+              { time: 0.72, value: [0, 0.2, 0] },
+              { time: 1.45, value: [0, -0.45, 0] },
+              { time: 2.18, value: [0, 0.2, 0] },
+              { time: 2.9, value: [0, -0.45, 0] },
+            ],
+            rotation: [{ time: 0, value: [0, 0, d(0.9)] }, { time: 1.45, value: [0, 0, d(-0.9)] }, { time: 2.9, value: [0, 0, d(0.9)] }],
+          },
+          torso: { rotation: [{ time: 0, value: [d(-1.6), d(-1.1), 0] }, { time: 1.45, value: [d(-1.6), d(1.1), 0] }, { time: 2.9, value: [d(-1.6), d(-1.1), 0] }] },
+          armLeft: { rotation: swing(d(3.4), 2.9, 1) },
+          armRight: { rotation: swing(d(3.4), 2.9, 0) },
+        },
+      },
+      run: {
+        name: 'run',
+        duration: 1.95,
+        loop: LoopMode.LOOP,
+        tracks: {
+          legLeft: { rotation: swing(d(19), 1.95, 0) },
+          legRight: { rotation: swing(d(19), 1.95, 1) },
+          shinLeft: { rotation: swing(d(-11), 1.95, 1) },
+          shinRight: { rotation: swing(d(-11), 1.95, 0) },
+          hips: {
+            position: [
+              { time: 0, value: [0, -0.8, 0] },
+              { time: 0.49, value: [0, 0.35, 0] },
+              { time: 0.97, value: [0, -0.8, 0] },
+              { time: 1.46, value: [0, 0.35, 0] },
+              { time: 1.95, value: [0, -0.8, 0] },
+            ],
+            rotation: [{ time: 0, value: [0, 0, d(1.6)] }, { time: 0.97, value: [0, 0, d(-1.6)] }, { time: 1.95, value: [0, 0, d(1.6)] }],
+          },
+          torso: { rotation: [{ time: 0, value: [d(-4.5), 0, 0] }, { time: 1.95, value: [d(-4.5), 0, 0] }] },
+          armLeft: { rotation: swing(d(9), 1.95, 1) },
+          armRight: { rotation: swing(d(9), 1.95, 0) },
+        },
+      },
+      // Inhale: the head comes up and back, the jaw opens, the chest lifts. The
+      // sound is five seconds long, so the emote is too -- the mouth stays open
+      // long enough for a player at the feet to see it.
+      roar: {
+        name: 'roar',
+        duration: 5.2,
+        loop: LoopMode.CLAMP,
+        tracks: {
+          head: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.9, value: [d(-14), 0, 0] }, { time: 3.7, value: [d(-13), d(-1.5), 0] }, { time: 5.2, value: [0, 0, 0] }] },
+          jaw: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.9, value: [d(23), 0, 0] }, { time: 3.5, value: [d(20), 0, 0] }, { time: 5.2, value: [0, 0, 0] }] },
+          torso: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.9, value: [d(-3), 0, 0] }, { time: 3.8, value: [d(-2.6), 0, 0] }, { time: 5.2, value: [0, 0, 0] }] },
+          shoulderLeft: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.9, value: [0, 0, d(3.2)] }, { time: 3.7, value: [0, 0, d(3)] }, { time: 5.2, value: [0, 0, 0] }] },
+          shoulderRight: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.9, value: [0, 0, d(-3.2)] }, { time: 3.7, value: [0, 0, d(-3)] }, { time: 5.2, value: [0, 0, 0] }] },
+          hips: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 1.2, value: [d(1.4), 0, 0] }, { time: 5.2, value: [0, 0, 0] }] },
+        },
+      },
+      // Shifting its weight. Not a step: nothing moves forward, the whole mass
+      // just settles by a couple of blocks and the knees take the load.
+      shift: {
+        name: 'shift',
+        duration: 4.6,
+        loop: LoopMode.CLAMP,
+        tracks: {
+          hips: {
+            position: [{ time: 0, value: [0, 0, 0] }, { time: 1.2, value: [0, -0.9, 0] }, { time: 2.6, value: [0, 0.25, 0] }, { time: 4.6, value: [0, 0, 0] }],
+            rotation: [{ time: 0, value: [0, 0, 0] }, { time: 1.2, value: [0, 0, d(1.2)] }, { time: 2.6, value: [0, 0, d(-1)] }, { time: 4.6, value: [0, 0, 0] }],
+          },
+          torso: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 1.2, value: [d(-2), d(2), 0] }, { time: 4.6, value: [0, 0, 0] }] },
+          head: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 1.2, value: [d(2), d(-3), 0] }, { time: 4.6, value: [0, 0, 0] }] },
+          shinLeft: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 1.2, value: [d(5), 0, 0] }, { time: 4.6, value: [0, 0, 0] }] },
+          shinRight: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 1.2, value: [d(4), 0, 0] }, { time: 4.6, value: [0, 0, 0] }] },
+        },
+      },
+      // Stone does not flinch. A hit rotates the whole body by about a degree,
+      // which is all a sixty block mass would visibly do.
+      hurt: {
+        name: 'hurt',
+        duration: 0.6,
+        loop: LoopMode.CLAMP,
+        tracks: {
+          root: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.14, value: [d(-1.1), 0, d(0.7)] }, { time: 0.6, value: [0, 0, 0] }] },
+          head: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 0.14, value: [d(1.4), 0, 0] }, { time: 0.6, value: [0, 0, 0] }] },
+        },
+      },
+      // Seven seconds of giving up: the knees fold, the torso pitches forward and
+      // the whole mass sinks. The renderer deliberately does not add its usual
+      // death tilt to giants -- rotating sixty blocks by eighty degrees would put
+      // the head a hundred blocks sideways.
+      death: {
+        name: 'death',
+        duration: 7,
+        loop: LoopMode.CLAMP,
+        tracks: {
+          root: { position: [{ time: 0, value: [0, 0, 0] }, { time: 2.4, value: [0, -1.4, 0] }, { time: 7, value: [0, -8.5, 0] }] },
+          hips: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 2.4, value: [d(4), 0, d(2)] }, { time: 7, value: [d(9), 0, d(5)] }] },
+          torso: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 2.4, value: [d(6), 0, 0] }, { time: 7, value: [d(15), 0, 0] }] },
+          head: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 3.4, value: [d(12), d(6), 0] }, { time: 7, value: [d(24), d(11), 0] }] },
+          jaw: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 3, value: [d(9), 0, 0] }, { time: 7, value: [d(14), 0, 0] }] },
+          shinLeft: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 7, value: [d(16), 0, 0] }] },
+          shinRight: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 7, value: [d(13), 0, 0] }] },
+          armLeft: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 7, value: [d(-6), 0, d(-3)] }] },
+          armRight: { rotation: [{ time: 0, value: [0, 0, 0] }, { time: 7, value: [d(-4), 0, d(4)] }] },
+        },
+      },
+    },
+  },
 };
 
 // The expanded Phase 2 roster reuses the proven body-plan rigs. Each entry has
@@ -658,7 +917,7 @@ export function resolveClip(mobId, desired) {
   if (!entry) return null;
   const clips = entry.clips;
   if (clips[desired]) return desired;
-  const fallbacks = { run: 'walk', flap: 'idle', cast: 'attack', attack: 'idle', walk: 'idle' };
+  const fallbacks = { run: 'walk', flap: 'idle', cast: 'attack', attack: 'idle', walk: 'idle', roar: 'idle', shift: 'idle' };
   let cursor = fallbacks[desired];
   let guard = 0;
   while (cursor && guard++ < 8) {

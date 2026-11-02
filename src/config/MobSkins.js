@@ -289,6 +289,15 @@ export const MOB_SKIN_STYLES = Object.freeze({
     base: [26, 26, 32], accent: [14, 14, 18], eye: [238, 238, 242],
     pattern: 'void', face: 'void', eyeGlow: true,
   },
+  // The colossus: weathered grey-brown stone with a paler, almost bleached accent
+  // for the carved trim, hoof blocks and brow. `armour` scores horizontal seams
+  // into it so the body reads as masonry rather than as hide, and the amber eyes
+  // are the only warm pixels on a sixty block silhouette -- which is what makes
+  // them visible at the distance the creature is meant to be seen from.
+  colossus: {
+    base: [104, 98, 88], accent: [176, 166, 142], eye: [255, 202, 110],
+    pattern: 'armour', face: 'humanoid', eyeGlow: true,
+  },
 });
 
 /** Canvas size the skin painters draw into. */
@@ -308,11 +317,62 @@ export const MOB_FACE_RECT = Object.freeze({
   v1: 13 / MOB_SKIN_TILE_PIXELS,
 });
 
-/** Plain band of the head tile, used for the back, sides, top and bottom. */
+/**
+ * Plain band of the head tile.
+ *
+ * Kept as a named region for painters/tests, but the renderer no longer stretches
+ * it over the non-front faces of a head: those sample the body tile instead, so
+ * a head side keeps the full marking pattern instead of three smeared columns.
+ */
 export const MOB_HEAD_SIDE_RECT = Object.freeze({ u0: 0, v0: 0, u1: 3 / 16, v1: 1 });
 
 /** Full tile, used by every face of the body, limb and accent roles. */
 export const MOB_FULL_RECT = Object.freeze({ u0: 0, v0: 0, u1: 1, v1: 1 });
+
+/**
+ * Pupil boxes drawn by `paintMobFace`, in **tile pixels** `[x, y, width, height]`.
+ *
+ * The renderer needs these because `eyeGlow` is a lighting decision, not a
+ * texture decision: the atlas only says *which pixels are eyes*, while the
+ * shader has to keep those pixels bright when the rest of the creature falls
+ * into the night. Keeping the boxes beside the face layouts means a new face
+ * cannot ship with eyes that do not glow.
+ *
+ * @type {Readonly<Record<string, ReadonlyArray<readonly [number,number,number,number]>>>}
+ */
+export const MOB_EYE_BOXES = Object.freeze({
+  mammal: Object.freeze([[4, 6, 2, 2], [10, 6, 2, 2]]),
+  humanoid: Object.freeze([[4, 6, 2, 2], [10, 6, 2, 2]]),
+  bird: Object.freeze([[4, 5, 2, 2], [10, 5, 2, 2]]),
+  skull: Object.freeze([[4, 6, 2, 3], [10, 6, 2, 3]]),
+  insect: Object.freeze([[3, 5, 2, 2], [11, 5, 2, 2]]),
+  slime: Object.freeze([[4, 6, 2, 2], [10, 6, 2, 2]]),
+  void: Object.freeze([[4, 6, 2, 2], [10, 6, 2, 2]]),
+  mask: Object.freeze([[4, 6, 2, 2], [10, 6, 2, 2]]),
+});
+
+/**
+ * Eye boxes of one face type, expressed as `0..1` fractions of the face rect.
+ *
+ * `MobRenderer` hands these straight to the shader, which can then mask the
+ * pupils without knowing anything about tile pixels.
+ *
+ * @param {string} face One of `MOB_FACES`.
+ * @returns {ReadonlyArray<readonly [number,number,number,number]>}
+ */
+export function mobEyeBoxes(face) {
+  const boxes = MOB_EYE_BOXES[face] ?? MOB_EYE_BOXES.mammal;
+  const spanU = MOB_FACE_RECT.u1 - MOB_FACE_RECT.u0;
+  const spanV = MOB_FACE_RECT.v1 - MOB_FACE_RECT.v0;
+  const originU = MOB_FACE_RECT.u0;
+  const originV = MOB_FACE_RECT.v0;
+  return boxes.map(([x, y, width, height]) => [
+    (x / MOB_SKIN_TILE_PIXELS - originU) / spanU,
+    (y / MOB_SKIN_TILE_PIXELS - originV) / spanV,
+    (width / MOB_SKIN_TILE_PIXELS) / spanU,
+    (height / MOB_SKIN_TILE_PIXELS) / spanV,
+  ]);
+}
 
 /** Bone names whose main box is a head. */
 const HEAD_BONES = Object.freeze(new Set(['head', 'skull', 'snout']));

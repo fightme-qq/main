@@ -12,10 +12,11 @@ import * as THREE from 'three';
 import { ENTITIES } from '../config/GameConfig.js';
 import {
   MOB_FACE_RECT,
-  MOB_HEAD_SIDE_RECT,
   MOB_SKIN_ROLES,
+  mobEyeBoxes,
   mobSkinRoleForBone,
   mobSkinRoleForBox,
+  mobSkinStyle,
   mobSkinTileName,
 } from '../config/MobSkins.js';
 import { TILE_UVS } from '../world/AtlasLayout.js';
@@ -28,6 +29,7 @@ import { MobPoseBuffer } from '../rendering/MobPoseBuffer.js';
 const MOB_VERTEX_SHADER = /* glsl */ `
   attribute float aShade;
   attribute float aBone;
+  attribute float aFace;
   attribute float aInstanceRow;
   attribute vec4 aMobAnim; // hurt, alive, unused, unused
 
@@ -40,6 +42,7 @@ const MOB_VERTEX_SHADER = /* glsl */ `
   varying float vViewDepth;
   varying float vShade;
   varying float vHurt;
+  varying float vFace;
 
   vec4 boneRow(float bone, float row) {
     vec2 uv = vec2((bone * 3.0 + row + 0.5) / uBoneTexSize.x,
@@ -64,6 +67,7 @@ const MOB_VERTEX_SHADER = /* glsl */ `
     vUv = uv;
     vShade = aShade;
     vHurt = aMobAnim.x;
+    vFace = aFace;
 
     vec4 viewPosition = viewMatrix * worldPosition;
     vViewDepth = -viewPosition.z;
@@ -85,6 +89,13 @@ const MOB_FRAGMENT_SHADER = /* glsl */ `
   uniform float uFogFar;
   uniform float uFogStrength;
   uniform float uBrightness;
+  uniform float uRimBoost;
+
+  uniform vec4 uFaceRect;
+  uniform vec4 uEyeBoxA;
+  uniform vec4 uEyeBoxB;
+  uniform vec3 uEyeColor;
+  uniform float uEyeGlow;
 
   varying vec2 vUv;
   varying vec3 vWorldNormal;
@@ -92,6 +103,15 @@ const MOB_FRAGMENT_SHADER = /* glsl */ `
   varying float vViewDepth;
   varying float vShade;
   varying float vHurt;
+  varying float vFace;
+
+  /** 1.0 when a face-relative coordinate lies inside one pupil box. */
+  float eyeBox(vec2 faceUv, vec4 box) {
+    vec2 lower = box.xy;
+    vec2 upper = box.xy + box.zw;
+    return step(lower.x, faceUv.x) * step(faceUv.x, upper.x)
+         * step(lower.y, faceUv.y) * step(faceUv.y, upper.y);
+  }
 
   void main() {
     vec4 texel = texture2D(uAtlas, vUv);
@@ -104,16 +124,33 @@ const MOB_FRAGMENT_SHADER = /* glsl */ `
     vec3 lighting = ambient + uSunColor * ndotl * 0.82 + vec3(uCaveAmbient);
 
     // Sky rim light pops silhouettes out of dark backdrops, the way creatures
-    // separate from the fog in modern Minecraft shader packs.
+    // separate from the fog in modern Minecraft shader packs. The extra night
+    // term is what keeps a hostile readable as a *shape* at midnight instead of
+    // collapsing into an untextured black blob.
     vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
     float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 3.0);
-    lighting += uSkyAmbient * (rim * 0.4);
+    lighting += uSkyAmbient * (rim * 0.4) + vec3(uRimBoost * rim);
 
     vec3 base = texel.rgb * vShade;
     base = mix(base, vec3(1.0, 0.16, 0.12), clamp(vHurt, 0.0, 0.72));
     vec3 color = base * lighting * uBrightness;
-    float fog = smoothstep(uFogNear, uFogFar, vViewDepth) * uFogStrength;
+    // Creatures fade out later than terrain. The fog far plane is tuned for
+    // landscape silhouettes; applying it verbatim to a 40-pixel-tall mob erases
+    // it several blocks before the player could ever read its face. Pushing the
+    // creature fade a third further keeps a hostile visible as it leaves the
+    // mist, which is the difference between "a monster appeared" and "something
+    // hit me from nowhere".
+    float fog = smoothstep(uFogNear, uFogFar * 1.35, vViewDepth) * uFogStrength * 0.92;
     color = mix(color, uFogColor, fog);
+
+    // Glowing eyes are drawn after the fog on purpose: the whole point of the
+    // feature is that two points of light survive the dark and the mist even
+    // when the rest of the creature does not.
+    if (uEyeGlow > 0.5 && vFace > 0.5) {
+      vec2 faceUv = (vUv - uFaceRect.xy) / uFaceRect.zw;
+      float pupils = clamp(eyeBox(faceUv, uEyeBoxA) + eyeBox(faceUv, uEyeBoxB), 0.0, 1.0);
+      color = mix(color, uEyeColor, pupils * 0.92);
+    }
 
     gl_FragColor = vec4(color, 1.0);
     #include <tonemapping_fragment>
@@ -170,9 +207,14 @@ function skinRectsFor(definition) {
     limb: { full: tiles.limb ?? body },
     accent: { full: tiles.accent ?? body },
     head: {
-      full: head,
+      // The back, sides, top and bottom of a head sample the body tile rather
+      // than a strip of the face tile. The face tile only leaves a three-pixel
+      // border around the face, and stretching that border over a whole cube
+      // face produced visible smears; the body tile carries the same hide and
+      // marking pattern without any facial features.
+      full: body,
       face: subRect(head, MOB_FACE_RECT),
-      side: subRect(head, MOB_HEAD_SIDE_RECT),
+      side: body,
     },
   };
   return rects;
@@ -242,6 +284,7 @@ function buildMobGeometry(rig, skinRects) {
   const uvs = [];
   const bones = [];
   const shades = [];
+  const faceFlags = [];
   const indices = [];
   let vertexBase = 0;
 
@@ -281,14 +324,18 @@ function buildMobGeometry(rig, skinRects) {
           );
           bones.push(boneIndex);
           shades.push(part.shade ?? 1);
+          faceFlags.push(role === 'head' && front ? 1 : 0);
         }
         // Quad corners are pushed bottom-left, bottom-right, top-right, top-left
-        // as seen from outside the box, so this winding faces the viewer.
+        // as seen from outside the box, so this winding faces the viewer. The
+        // base has to advance per face: all six quads of a box were previously
+        // indexed against the first quad's four vertices, which left every box
+        // as a single +X card and made creatures vanish when seen from any other
+        // direction.
         const base = vertexBase;
         indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        vertexBase += 4;
       }
-
-      vertexBase += 4 * faces.length;
     }
   }
 
@@ -298,6 +345,7 @@ function buildMobGeometry(rig, skinRects) {
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geometry.setAttribute('aBone', new THREE.Float32BufferAttribute(bones, 1));
   geometry.setAttribute('aShade', new THREE.Float32BufferAttribute(shades, 1));
+  geometry.setAttribute('aFace', new THREE.Float32BufferAttribute(faceFlags, 1));
   geometry.setIndex(indices);
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
@@ -314,7 +362,10 @@ function buildMobGeometry(rig, skinRects) {
   return geometry;
 }
 
-function createMaterial(atlasTexture, poseTexture, poseBuffer) {
+function createMaterial(atlasTexture, poseTexture, poseBuffer, skin) {
+  const faceRect = skin.faceRect;
+  const eyeBoxes = skin.eyeBoxes;
+  const eye = skin.eye.map((channel) => Math.min(255, Math.round(channel * (skin.eyeGlow ? 1.25 : 1))));
   return new THREE.ShaderMaterial({
     name: 'mob-skin',
     uniforms: {
@@ -329,6 +380,22 @@ function createMaterial(atlasTexture, poseTexture, poseBuffer) {
       uFogFar: { value: 160 },
       uFogStrength: { value: 1 },
       uBrightness: { value: 1 },
+      uRimBoost: { value: 0 },
+      uFaceRect: { value: new THREE.Vector4(
+        faceRect.u0,
+        faceRect.v0,
+        faceRect.u1 - faceRect.u0,
+        faceRect.v1 - faceRect.v0
+      ) },
+      uEyeBoxA: { value: new THREE.Vector4(...eyeBoxes[0]) },
+      uEyeBoxB: { value: new THREE.Vector4(...eyeBoxes[1]) },
+      uEyeColor: { value: new THREE.Color().setRGB(
+        eye[0] / 255,
+        eye[1] / 255,
+        eye[2] / 255,
+        THREE.SRGBColorSpace
+      ) },
+      uEyeGlow: { value: skin.eyeGlow ? 1 : 0 },
       uBones: { value: poseTexture },
       uBoneTexSize: { value: new THREE.Vector2(poseBuffer.width, poseBuffer.height) },
     },
@@ -389,6 +456,7 @@ export class MobRenderer {
       const rig = MOB_SKELETONS[definition.id];
       if (!rig) throw new Error(`Mob ${definition.id} has no skeletal rig`);
       const skinRects = skinRectsFor(definition);
+      const style = mobSkinStyle(definition.id);
       const geometry = buildMobGeometry(rig, skinRects);
       const poseBuffer = new MobPoseBuffer({ boneCount: rig.skeleton.bones.length, maxInstances: ENTITIES.maxMobs });
       const poseTexture = new THREE.DataTexture(
@@ -403,7 +471,12 @@ export class MobRenderer {
       poseTexture.magFilter = THREE.NearestFilter;
       poseTexture.generateMipmaps = false;
       poseTexture.needsUpdate = true;
-      const material = createMaterial(atlasTexture, poseTexture, poseBuffer);
+      const material = createMaterial(atlasTexture, poseTexture, poseBuffer, {
+        faceRect: skinRects.head.face,
+        eyeBoxes: mobEyeBoxes(style.face),
+        eye: style.eye,
+        eyeGlow: style.eyeGlow === true,
+      });
       const mesh = new THREE.InstancedMesh(geometry, material, ENTITIES.maxMobs);
       mesh.name = `mobs-${definition.id}`;
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -442,13 +515,21 @@ export class MobRenderer {
         ? 1 - Math.max(0, Math.min(1, mob.deathTimer / 0.65))
         : 0;
       this._position.set(mob.x, mob.y, mob.z);
-      this._euler.set(0, mob.facing, -deathProgress * Math.PI * 0.48, 'YXZ');
+      // The stock death tells a small creature's story: it topples sideways. At
+      // sixty blocks the same rotation would swing the head a hundred blocks and
+      // bury it in the terrain, so giants get their collapse from the authored
+      // `death` clip instead.
+      const deathTilt = entry.definition.giant ? 0 : deathProgress * Math.PI * 0.48;
+      this._euler.set(0, mob.facing, -deathTilt, 'YXZ');
       this._quaternion.setFromEuler(this._euler);
       this._scale.setScalar(mob.ageScale ?? 1);
       this._matrix.compose(this._position, this._quaternion, this._scale);
       entry.mesh.setMatrixAt(index, this._matrix);
 
-      if (shadowCount < ENTITIES.maxMobs && !mob.inLiquid) {
+      // A giant's contact shadow would be a fourteen-block black disc, which
+      // reads as a painted circle rather than as ground shadow at that size. Its
+      // grounding comes from the fog and the terrain it stands in instead.
+      if (shadowCount < ENTITIES.maxMobs && !mob.inLiquid && !entry.definition.giant) {
         const radius = Math.max(.2, (mob.halfSize ?? .35) * 1.18 * (mob.ageScale ?? 1));
         this._position.set(mob.x, mob.y + .018, mob.z);
         this._shadowScale.set(radius, radius, radius);
@@ -471,6 +552,7 @@ export class MobRenderer {
       animator.update(dt, {
         speed: Math.hypot(mob.velocityX ?? 0, mob.velocityZ ?? 0),
         isDead: mob.isDead,
+        emote: mob.emote ?? null,
         attacking: mob.justAttacked || mob.attackCooldown > 0,
         casting: entry.definition.ranged && mob.attackCooldown > 0,
         onGround: mob.onGround,
@@ -510,18 +592,27 @@ export class MobRenderer {
   }
 
   applyLighting(state) {
+    const daylight = Number.isFinite(state.daylight)
+      ? Math.max(0, Math.min(1, state.daylight))
+      : 1;
+    const darkness = 1 - daylight;
+    // A small floor keeps hides and faces readable after dusk. Without it a
+    // creature at midnight is base-colour times an ambient of ~0.05, which reads
+    // as an untextured black blob even though the atlas is painted correctly.
+    const ambientFloor = 0.02 + 0.11 * darkness;
     for (const { material } of this._entries.values()) {
       const uniforms = material.uniforms;
       uniforms.uSunDirection.value.copy(state.sunDirection);
       uniforms.uSunColor.value.copy(state.sunColor);
       uniforms.uSkyAmbient.value.copy(state.skyAmbient);
       uniforms.uGroundAmbient.value.copy(state.groundAmbient);
-      uniforms.uCaveAmbient.value = state.caveAmbient;
+      uniforms.uCaveAmbient.value = Math.max(state.caveAmbient, ambientFloor);
       uniforms.uFogColor.value.copy(state.fogColor);
       uniforms.uFogNear.value = state.fogNear;
       uniforms.uFogFar.value = state.fogFar;
       uniforms.uFogStrength.value = state.fogStrength;
       uniforms.uBrightness.value = state.brightness;
+      uniforms.uRimBoost.value = 0.09 * darkness;
     }
   }
 

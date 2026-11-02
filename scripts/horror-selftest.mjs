@@ -26,8 +26,10 @@ import {
   MOB_SKIN_ROLES,
   MOB_SKIN_STYLES,
   MOB_SKIN_TILE_PIXELS,
+  mobEyeBoxes,
   mobSkinRoleForBone,
   mobSkinRoleForBox,
+  mobSkinStyle,
   mobSkinTileName,
 } from '../src/config/MobSkins.js';
 import {
@@ -162,6 +164,10 @@ if (renderer) {
   const outsideUv = [];
   const singleTileMobs = [];
   const faceFailures = [];
+  const eyeFailures = [];
+  const eyeBoxFailures = [];
+  const faceFlagFailures = [];
+  const indexFailures = [];
 
   // Recomputes the atlas rect of a tile the same way `skinRectsFor` does.
   const tileRect = (tile) => {
@@ -188,6 +194,21 @@ if (renderer) {
       tiles.add(`${Math.floor(u * 32)}:${Math.floor(v * 32)}`);
     }
     if (tiles.size < 2) singleTileMobs.push(entry.definition.id);
+
+    // Every box is four vertices per face; a box that indexes anything less than
+    // all six quads renders as a one-sided card and disappears with yaw.
+    const positionAttribute = geometry.getAttribute('position');
+    const index = geometry.index;
+    const expectedIndices = (positionAttribute.count / 4) * 6;
+    if (!index || index.count !== expectedIndices) {
+      indexFailures.push(`${entry.definition.id}:${index?.count ?? 0}/${expectedIndices}`);
+    } else {
+      const referenced = new Set();
+      for (let i = 0; i < index.count; i++) referenced.add(index.getX(i));
+      if (referenced.size !== positionAttribute.count) {
+        indexFailures.push(`${entry.definition.id}:used=${referenced.size}/${positionAttribute.count}`);
+      }
+    }
 
     // Front faces of the head must sample the face sub-rect of the head tile.
     const rig = MOB_SKELETONS[entry.definition.id];
@@ -221,6 +242,46 @@ if (renderer) {
       }
     }
     if (frontVertices < 4) faceFailures.push(`${entry.definition.id}:front=${frontVertices}`);
+
+    // Eye glow is a shader feature, so the material has to carry the palette's
+    // decision and the pupil boxes, and the geometry has to mark the head front.
+    const style = mobSkinStyle(entry.definition.id);
+    const uniforms = entry.material.uniforms;
+    if (uniforms.uEyeGlow?.value !== (style.eyeGlow === true ? 1 : 0)) {
+      eyeFailures.push(`${entry.definition.id}:glow`);
+    }
+    const expectedFace = tileRect(headTile);
+    const faceUniform = uniforms.uFaceRect?.value;
+    if (
+      !faceUniform ||
+      Math.abs(faceUniform.x - (expectedFace.u0 + (expectedFace.u1 - expectedFace.u0) * MOB_FACE_RECT.u0)) > 1e-6 ||
+      Math.abs(faceUniform.y - (expectedFace.v0 + (expectedFace.v1 - expectedFace.v0) * MOB_FACE_RECT.v0)) > 1e-6 ||
+      Math.abs(faceUniform.z - (expectedFace.u1 - expectedFace.u0) * (MOB_FACE_RECT.u1 - MOB_FACE_RECT.u0)) > 1e-6
+    ) {
+      eyeFailures.push(`${entry.definition.id}:face-rect`);
+    }
+    for (const box of mobEyeBoxes(style.face)) {
+      const [x, y, width, height] = box;
+      if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1.0001 || y + height > 1.0001) {
+        eyeBoxFailures.push(`${entry.definition.id}:${x},${y},${width},${height}`);
+      }
+    }
+    const faceAttribute = geometry.getAttribute('aFace');
+    if (!faceAttribute || faceAttribute.count !== uv.count) {
+      faceFlagFailures.push(`${entry.definition.id}:missing`);
+    } else {
+      let flagged = 0;
+      let outsideHead = 0;
+      for (let vertex = 0; vertex < faceAttribute.count; vertex++) {
+        const flag = faceAttribute.getX(vertex);
+        if (flag === 0) continue;
+        flagged++;
+        if (bone.getX(vertex) !== headIndex) outsideHead++;
+      }
+      if (flagged !== 4 || outsideHead > 0) {
+        faceFlagFailures.push(`${entry.definition.id}:${flagged}/${outsideHead}`);
+      }
+    }
   }
 
   check('every creature builds without throwing', true);
@@ -231,6 +292,26 @@ if (renderer) {
     singleTileMobs.join(','),
   );
   check('head fronts use the face region', faceFailures.length === 0, faceFailures.slice(0, 3).join(','));
+  check(
+    'eye glow follows the skin palette',
+    eyeFailures.length === 0,
+    eyeFailures.slice(0, 3).join(','),
+  );
+  check(
+    'pupil boxes stay inside the face',
+    eyeBoxFailures.length === 0,
+    eyeBoxFailures.slice(0, 3).join(','),
+  );
+  check(
+    'the head front is flagged for eye glow',
+    faceFlagFailures.length === 0,
+    faceFlagFailures.slice(0, 3).join(','),
+  );
+  check(
+    'every box indexes all six faces',
+    indexFailures.length === 0,
+    indexFailures.slice(0, 3).join(','),
+  );
   check(
     'contact shadows share one instanced pool',
     renderer.shadowMesh?.name === 'mob-contact-shadows',

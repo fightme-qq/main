@@ -3571,3 +3571,23 @@ TILE_PAINTERS.mob_ender_dragon = (p) => {
   p.rect(9, 5, 4, 2, [214, 110, 242]);
   p.hLine(11, 4, 11, [52, 38, 68]);
 };
+
+/**
+ * The colossus's legacy single tile.
+ *
+ * The renderer draws the per-role skins, but `MobTypes.tileName` still has to
+ * resolve for every creature, so this is the fallback the atlas contract asks
+ * for: weathered stone with a crack running through it and two amber points.
+ */
+TILE_PAINTERS.mob_colossus = (p) => {
+  p.fill(104, 98, 88).grain(12);
+  p.blobs(4, 2.4, [86, 80, 72], 10);
+  p.blobs(3, 1.4, [124, 118, 104], 8);
+  // A single long fracture: a smooth stone slab reads as plastic without it.
+  p.vLine(6, 0, 6, [68, 62, 56]);
+  p.set(7, 7, 68, 62, 56);
+  p.vLine(8, 8, 13, [64, 58, 52]);
+  p.rect(4, 5, 2, 2, [255, 202, 110]);
+  p.rect(10, 5, 2, 2, [255, 202, 110]);
+};
+

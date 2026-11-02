@@ -83,6 +83,19 @@ export const GameplayEvent = Object.freeze({
   DRAGON_ROAR: 'dragon.roar',
   DRAGON_BATTLE: 'dragon.battle',
 
+  // -- the colossus
+  //
+  // These four are bound here for reachability, but they are *played* by
+  // `MobEntity._tickGiant` through `Events.PLAY_SOUND`, not through `playEvent`.
+  // A sixty block creature needs its own reference distance and rolloff -- its
+  // head is eighty blocks above its feet -- and a sixty block roar has to stay
+  // audible a few hundred blocks out, which the stock positional defaults do not
+  // allow. The entity owns that decision; this table owns the buffer names.
+  COLOSSUS_ROAR: 'colossus.roar',
+  COLOSSUS_GROAN: 'colossus.groan',
+  COLOSSUS_STEP: 'colossus.step',
+  COLOSSUS_BREATH: 'colossus.breath',
+
   // -- ui
   UI_CLICK: 'ui.click',
   UI_SELECT: 'ui.select',
@@ -160,6 +173,14 @@ export const SOUND_EVENTS = Object.freeze({
   [GameplayEvent.MOB_DEATH]: { sound: 'mob.death', volume: 0.8, positional: true },
   [GameplayEvent.MOB_ATTACK]: { sound: 'mob.attack', volume: 0.7, cooldown: 0.15, positional: true },
   [GameplayEvent.DRAGON_ROAR]: { sound: 'mob.ender_dragon.roar', volume: 0.8, cooldown: 2 },
+
+  // The colossus voices. Reachability is declared here; the entity positions
+  // them (see the note beside the GameplayEvent entries).
+  [GameplayEvent.COLOSSUS_ROAR]: { sound: 'mob.colossus.roar', volume: 1, positional: true, cooldown: 12 },
+  [GameplayEvent.COLOSSUS_GROAN]: { sound: 'mob.colossus.groan', volume: 0.72, positional: true, cooldown: 6 },
+  [GameplayEvent.COLOSSUS_STEP]: { sound: 'mob.colossus.step', volume: 0.9, positional: true, cooldown: 6 },
+  [GameplayEvent.COLOSSUS_BREATH]: { sound: 'mob.colossus.breath', volume: 0.8, positional: true, cooldown: 2 },
+
   // This binding documents the loop's catalogue reachability; Game controls it
   // through AudioManager.setLoop so it starts and stops with the live fight.
   [GameplayEvent.DRAGON_BATTLE]: { sound: 'music.dragon', volume: 0.46 },

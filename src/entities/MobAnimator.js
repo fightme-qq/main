@@ -38,6 +38,10 @@ const FADE_SECONDS = Object.freeze({
   death: 0.1,
   attack: 0.07,
   cast: 0.12,
+  // A sixty block creature cannot snap into a pose: the roar and the weight
+  // shift are given a long blend so the motion starts before it is expected.
+  roar: 0.45,
+  shift: 0.4,
   run: 0.15,
   walk: 0.18,
   flap: 0.15,
@@ -50,11 +54,12 @@ export const FLINCH_SECONDS = 0.3;
 /**
  * Chooses the clip for a gameplay state.
  *
- * Order matters and encodes the priority: death outranks everything, a swing
- * outranks locomotion, and locomotion outranks idling.
+ * Order matters and encodes the priority: death outranks everything, a scripted
+ * emote outranks a swing, a swing outranks locomotion, and locomotion outranks
+ * idling.
  *
  * @param {string} mobId
- * @param {{isDead?:boolean, attacking?:boolean, casting?:boolean, speed?:number, onGround?:boolean}} state
+ * @param {{isDead?:boolean, emote?:string|null, attacking?:boolean, casting?:boolean, speed?:number, onGround?:boolean}} state
  * @returns {string|null}
  */
 export function selectClip(mobId, state = {}) {
@@ -62,6 +67,14 @@ export function selectClip(mobId, state = {}) {
   // Every mob is guaranteed a death clip (see REQUIRED_CLIPS), so this one is
   // safe to return unguarded.
   if (state.isDead) return resolveClip(mobId, 'death');
+
+  // Emotes -- the colossus's roar and weight shift -- are opt-in: `resolveClip`
+  // answers with `idle` for a creature that has no such clip, and taking that
+  // answer would drop a moving creature into idle. Only an exact match counts.
+  if (state.emote) {
+    const emote = resolveClip(mobId, state.emote);
+    if (emote === state.emote) return emote;
+  }
 
   // `cast` and `attack` are optional. resolveClip falls back to `idle` when a mob
   // lacks them, so returning it unguarded would drop a sprinting creature into

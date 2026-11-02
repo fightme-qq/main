@@ -22,6 +22,7 @@
     "audio:qc": "node scripts/audio/qc.mjs",
     "audio:browser": "node scripts/audio-browser-check.mjs",
     "mobs:browser": "node scripts/mob-ai-check.mjs",
+    "colossus:browser": "node scripts/colossus-check.mjs",
     "menu:browser": "node scripts/menu-check.mjs",
     "smoketest": "node scripts/build-smoketest.mjs",
     "smoketest:browser": "node scripts/browser-smoketest.mjs",
