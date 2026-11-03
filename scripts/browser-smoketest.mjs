@@ -488,6 +488,69 @@ try {
   check('mobs share an instanced terrain contact-shadow pool',
     voxelCharacters.mobShadowPool && voxelCharacters.mobShadowName === 'mob-contact-shadows');
 
+  // The first-person arm is the one piece of the player rig with no third-person
+  // screenshot to catch it: it lives in camera space and is drawn over everything.
+  // It shipped once as an unlit white bar that then flew off the screen, because
+  // the view model passed speed-like numbers to `damp` (whose argument is the
+  // fraction still left after one second) and the smoothing diverged.
+  section('First-person view model');
+  const viewModel = await page.evaluate(async () => {
+    const g = window.game;
+    g.cameraController.setPersonMode(0);
+    g.player.updateBody(0, g.cameraController.yaw, 1 / 60);
+    const vm = g.viewModel;
+    if (!vm) return null;
+
+    const startYaw = g.cameraController.yaw;
+    const started = performance.now();
+    // Four seconds of exactly the motion that used to break the damped terms:
+    // sweeping the camera and bouncing vertically.
+    await new Promise((resolve) => {
+      const tick = () => {
+        const t = (performance.now() - started) / 1000;
+        g.cameraController.setRotation(startYaw + Math.sin(t * 2.1) * 1.4, Math.sin(t * 1.7) * 0.5);
+        g.player.velocity.y = Math.sin(t * 6) * 6;
+        if (t < 4) requestAnimationFrame(tick);
+        else resolve();
+      };
+      requestAnimationFrame(tick);
+    });
+
+    const white = [];
+    let parts = 0;
+    // Only the arm's own meshes: `heldItemGroup` is a sibling of them, and a held
+    // block legitimately uses an untinted white material with an atlas map.
+    for (const child of vm.armGroup.children) {
+      if (!child.isMesh) continue;
+      parts++;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        if (material?.color && material.color.getHex() === 0xffffff && !material.map) {
+          white.push(child.name || 'unnamed');
+        }
+      }
+    }
+    const position = vm.armGroup.position;
+    return {
+      parts,
+      whiteParts: [...new Set(white)],
+      position: [position.x, position.y, position.z],
+      finite: Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z) &&
+        Number.isFinite(vm.armGroup.rotation.x) && Number.isFinite(vm.armGroup.rotation.y),
+    };
+  });
+  report.viewModel = viewModel;
+  check('the first-person arm is built from sleeve, hand and thumb',
+    Boolean(viewModel) && viewModel.parts >= 3, String(viewModel?.parts));
+  check('the first-person arm is not painted pure white',
+    Boolean(viewModel) && viewModel.whiteParts.length === 0, (viewModel?.whiteParts ?? []).join(','));
+  check('the first-person arm stays in front of the camera after four seconds of camera motion',
+    Boolean(viewModel) && viewModel.finite === true &&
+      Math.abs(viewModel.position[0] - 0.34) < 0.5 &&
+      Math.abs(viewModel.position[1] + 0.18) < 0.5 &&
+      Math.abs(viewModel.position[2] + 0.32) < 0.5,
+    JSON.stringify(viewModel?.position));
+
   const material = await page.evaluate(() => {
     const m = window.game.materials.forLayer('liquid');
     return {

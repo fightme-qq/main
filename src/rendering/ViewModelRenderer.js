@@ -18,6 +18,26 @@ const BASE_POSITION = new THREE.Vector3(0.34, -0.18, -0.32);
 /** Base rotation for the arm (Euler: pitch, yaw, roll). */
 const BASE_ROTATION = new THREE.Euler(0.08, -0.18, 0.04, 'YXZ');
 
+/**
+ * Smoothing constants for `damp`.
+ *
+ * `damp()` takes the fraction of the distance that is *still left after one
+ * second*, so every value here has to be strictly between 0 and 1. The view
+ * model used to pass speed-like numbers (10, 12, 15), which makes
+ * `Math.pow(smoothing, dt)` greater than one: the lerp factor leaves `[0, 1]`,
+ * the value overshoots the target, and each frame multiplies the overshoot by
+ * another 1.04. Three seconds of camera movement were enough to push the sway
+ * term from ±0.08 to about -270, which is the arm flying off the screen.
+ */
+const SPEED_SMOOTHING = 1e-6;
+const VERTICAL_SMOOTHING = 1e-5;
+const SWAY_SMOOTHING = 0.002;
+
+/** Flat per-face-tinted material, the same trick the voxel textures use. */
+function tint(colour) {
+  return new THREE.MeshBasicMaterial({ color: colour });
+}
+
 /** Tier color palettes for 3D tools. */
 const TIER_COLORS = {
   [ToolTier.WOOD]: 0x8b5a2b,
@@ -93,19 +113,54 @@ export class ViewModelRenderer {
     this._buildArm();
   }
 
-  /** Constructs the voxel player arm — white sleeve like Steve. */
+  /**
+   * Builds the first-person arm: a teal sleeve, a skin hand and a thumb.
+   *
+   * Replaces a single unlit `0xffffff` box. That box had two problems: pure white
+   * with no shading reads as a missing material rather than as a sleeve, and its
+   * skin-toned face was the *+Z* one -- the end nearest the camera -- so the hand
+   * was the part hidden behind the near plane while the player looked at a white
+   * bar. Here the boxes run from the camera outwards along -Z, the hand is the far
+   * box, and each face carries a tint so the silhouette reads as a solid arm
+   * without a light being involved.
+   *
+   * Colours are the third-person avatar's own palette, so the first- and
+   * third-person bodies are the same character.
+   */
   _buildArm() {
-    const geometry = new THREE.BoxGeometry(0.11, 0.11, 0.38);
-    const sleeveMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const skinMaterial = new THREE.MeshBasicMaterial({ color: 0xdcb896 });
-    const materials = [
-      sleeveMaterial, sleeveMaterial, sleeveMaterial, sleeveMaterial,
-      skinMaterial, sleeveMaterial,
-    ];
-    this._disposables.push(geometry, sleeveMaterial, skinMaterial);
-    const armMesh = new THREE.Mesh(geometry, materials);
-    armMesh.position.set(0, 0, 0);
-    this.armGroup.add(armMesh);
+    const shirtShade = tint(0x0f666d);
+    const shirt = tint(0x168f91);
+    const shirtLight = tint(0x31b8b1);
+    const skin = tint(0xc98f67);
+    const skinShade = tint(0xaa704e);
+    const skinLight = tint(0xe0aa7e);
+
+    // BoxGeometry material order: +X, -X, +Y, -Y, +Z, -Z.
+    const sleeveMaterials = [shirt, shirt, shirtLight, shirtShade, shirt, shirtShade];
+    const handMaterials = [skin, skin, skinLight, skinShade, skin, skin];
+
+    const sleeveGeometry = new THREE.BoxGeometry(0.13, 0.13, 0.24);
+    const sleeve = new THREE.Mesh(sleeveGeometry, sleeveMaterials);
+    sleeve.name = 'viewmodel-sleeve';
+    // The near end stops at z = -0.11 in camera space, just outside the 0.08
+    // near plane, so the sleeve never gets clipped into a hard-edged hole.
+    sleeve.position.set(0, 0, 0.09);
+
+    const handGeometry = new THREE.BoxGeometry(0.16, 0.16, 0.15);
+    const hand = new THREE.Mesh(handGeometry, handMaterials);
+    hand.name = 'viewmodel-hand';
+    hand.position.set(0, -0.005, -0.105);
+
+    const thumbGeometry = new THREE.BoxGeometry(0.055, 0.07, 0.09);
+    const thumb = new THREE.Mesh(thumbGeometry, handMaterials);
+    thumb.name = 'viewmodel-thumb';
+    thumb.position.set(-0.09, 0.015, -0.08);
+
+    this._disposables.push(
+      sleeveGeometry, handGeometry, thumbGeometry,
+      shirtShade, shirt, shirtLight, skin, skinShade, skinLight
+    );
+    this.armGroup.add(sleeve, hand, thumb);
   }
 
   /**
@@ -406,14 +461,14 @@ export class ViewModelRenderer {
 
     const controls = this._settings.values.controls;
     const rawSpeed = player ? Math.hypot(player.velocity.x, player.velocity.z) : 0;
-    this._smoothedSpeed = damp(this._smoothedSpeed, rawSpeed, 10, dt);
+    this._smoothedSpeed = damp(this._smoothedSpeed, rawSpeed, SPEED_SMOOTHING, dt);
 
     const isSprinting = player?.intent?.sprint && this._smoothedSpeed > 2.0;
     const isCrouching = player?.intent?.crouch;
 
     // Vertical velocity impact cushion (jumping / falling)
     const targetVertOffset = player ? clamp(-player.velocity.y * 0.006, -0.08, 0.08) : 0;
-    this._verticalVelOffset = damp(this._verticalVelOffset, targetVertOffset, 12, dt);
+    this._verticalVelOffset = damp(this._verticalVelOffset, targetVertOffset, VERTICAL_SMOOTHING, dt);
 
     if (controls.cameraBob && this._smoothedSpeed > 0.3 && player?.onGround && !player?.flying) {
       const bobFreq = (isSprinting ? 4.2 : 3.4) * (this._smoothedSpeed / 4.3);
@@ -445,8 +500,8 @@ export class ViewModelRenderer {
     const targetSwayYaw = clamp(-deltaYaw * 0.2, -0.08, 0.08);
     const targetSwayPitch = clamp(-deltaPitch * 0.2, -0.08, 0.08);
 
-    this._swayYaw = damp(this._swayYaw, targetSwayYaw, 15, dt);
-    this._swayPitch = damp(this._swayPitch, targetSwayPitch, 15, dt);
+    this._swayYaw = clamp(damp(this._swayYaw, targetSwayYaw, SWAY_SMOOTHING, dt), -0.25, 0.25);
+    this._swayPitch = clamp(damp(this._swayPitch, targetSwayPitch, SWAY_SMOOTHING, dt), -0.25, 0.25);
 
     // Crouch offset
     const crouchOffsetY = isCrouching ? -0.03 : 0;
