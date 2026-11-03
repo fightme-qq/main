@@ -149,6 +149,10 @@ export const STREAMING = Object.freeze({
 
 /** Save-system constants. */
 export const SAVE = Object.freeze({
+  // The IndexedDB name is a *storage contract*, not branding: it is what every
+  // already-saved world was filed under. The game is called TitanCraft, but
+  // renaming this string would make every existing world vanish from the menu
+  // while still occupying the browser's storage, so it keeps its original name.
   databaseName: 'voxel-sandbox',
   // 2: added the `blockEntities` store for chests and furnaces.
   databaseVersion: 2,
@@ -226,5 +230,11 @@ export const INTERACTION = Object.freeze({
   creativeBreakRepeatSeconds: 0.16,
 });
 
-/** Local-storage key for the settings blob. */
+/**
+ * Local-storage key for the settings blob.
+ *
+ * Deliberately still `voxel-sandbox.*`: it is the key the current settings were
+ * written under, so changing it would silently reset every player's options on
+ * the first launch after the rename. Branding lives in the UI, not in storage.
+ */
 export const SETTINGS_STORAGE_KEY = 'voxel-sandbox.settings.v3';

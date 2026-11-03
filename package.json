@@ -1,9 +1,9 @@
 {
-  "name": "voxel-sandbox",
+  "name": "titancraft",
   "private": true,
   "version": "9.0.0",
   "type": "module",
-  "description": "An original Minecraft-style voxel sandbox engine built with Three.js. Unofficial, not affiliated with Mojang.",
+  "description": "TitanCraft - an original Minecraft-style voxel sandbox engine built with Three.js. Unofficial, not affiliated with Mojang.",
   "license": "MIT",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",

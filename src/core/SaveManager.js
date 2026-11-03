@@ -34,6 +34,15 @@ import { Events } from './EventBus.js';
 import { normalizeDifficulty, isPermadeathDifficulty } from '../gameplay/Difficulty.js';
 
 /**
+ * Marker written into exported save files.
+ *
+ * Exports made before the rename say `voxel-sandbox-save`; those files still
+ * have to import, so the reader accepts both and only the writer moved on.
+ */
+const SAVE_FILE_KIND = 'titancraft-save';
+const LEGACY_SAVE_FILE_KINDS = Object.freeze(new Set(['voxel-sandbox-save']));
+
+/**
  * @typedef {Object} WorldRecord
  * @property {string} id
  * @property {string} name
@@ -468,7 +477,7 @@ export class SaveManager {
     for (const [key, list] of entities) blockEntities[key] = list;
 
     return {
-      kind: 'voxel-sandbox-save',
+      kind: SAVE_FILE_KIND,
       formatVersion: SAVE.worldFormatVersion,
       exportedAt: new Date().toISOString(),
       world,
@@ -484,8 +493,9 @@ export class SaveManager {
    * @returns {Promise<WorldRecord>}
    */
   async importWorld(payload) {
-    if (!payload || payload.kind !== 'voxel-sandbox-save' || !payload.world) {
-      throw new Error('That file is not a Voxel Sandbox save');
+    const kind = payload?.kind;
+    if (!payload || (kind !== SAVE_FILE_KIND && !LEGACY_SAVE_FILE_KINDS.has(kind)) || !payload.world) {
+      throw new Error('That file is not a TitanCraft save');
     }
     if (Number(payload.formatVersion) > SAVE.worldFormatVersion) {
       throw new Error('That save was made by a newer version of the game');

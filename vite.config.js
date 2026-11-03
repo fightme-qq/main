@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 /**
- * Vite configuration for the voxel sandbox.
+ * Vite configuration for TitanCraft.
  *
  * `base: './'` produces relative asset URLs so the built `dist/` folder can be
  * dropped onto GitHub Pages (including project sub-paths), Netlify, Cloudflare

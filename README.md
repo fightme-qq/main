@@ -1,4 +1,4 @@
-# Minecraft-W / Voxel Sandbox — Version 9 Character & Challenge Release
+# TitanCraft — Version 9 Character & Challenge Release
 
 An original browser voxel-survival engine built with [Three.js](https://threejs.org/), plain ES
 modules and Vite. Version 9 combines deterministic infinite terrain and worker-based chunk streaming
@@ -292,7 +292,7 @@ world rather than overwriting one.
 ## Folder structure
 
 ```
-voxel-sandbox/
+titancraft/
 ├── index.html                 static shell and boot screen
 ├── vite.config.js
 ├── scripts/
@@ -512,5 +512,5 @@ diversity directly.
 
 ## License
 
-Minecraft-W is released under the included MIT `LICENSE`. Three.js is © the Three.js authors and is
+TitanCraft is released under the included MIT `LICENSE`. Three.js is © the Three.js authors and is
 also MIT licensed. This project is unofficial and does not include Mojang/Microsoft assets or code.

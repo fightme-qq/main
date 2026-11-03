@@ -129,7 +129,7 @@ const html = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Voxel Sandbox — smoke test</title>
+    <title>TitanCraft — smoke test</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   </head>
   <body>
@@ -139,7 +139,7 @@ const html = `<!doctype html>
     </div>
     <div id="boot-screen" class="boot-screen">
       <div class="boot-inner">
-        <h1 class="boot-title">VOXEL<span>SANDBOX</span></h1>
+        <h1 class="boot-title">TITAN<span>CRAFT</span></h1>
         <div class="boot-bar"><div class="boot-bar-fill"></div></div>
         <p class="boot-status">Loading engine&hellip;</p>
       </div>

@@ -1805,7 +1805,7 @@ try {
   check('four crystals resummon the dragon', endCampaign.resummoned === true);
   check('the resummon ritual regenerates damaged arena blocks', endCampaign.arenaRegenerated === true);
   check('resummoning restores a real iron-bar pillar cage', endCampaign.ironCage === true);
-  check('the original End poem and credits render', endCampaign.creditsVisible === true && endCampaign.poemLines >= 7 && endCampaign.creditsTitle === 'VOXEL SANDBOX');
+  check('the original End poem and credits render', endCampaign.creditsVisible === true && endCampaign.poemLines >= 7 && endCampaign.creditsTitle === 'TITANCRAFT');
   check('finishing credits is recorded', endCampaign.creditsRecorded === true);
   check('credits return to playable world state', endCampaign.returnedToPlay === true);
 

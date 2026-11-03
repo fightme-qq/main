@@ -44,7 +44,7 @@ export class StoryScreen {
     this.subtitle.textContent = 'Free the End';
     const poem = el('div', { className:'end-poem' }, END_POEM.map((line) => el('p', { text:line })));
     const credits = el('div', { className:'end-credits' }, [
-      el('h2', { text:'VOXEL SANDBOX' }),
+      el('h2', { text:'TITANCRAFT' }),
       el('p', { text:'Design, engineering, worlds, creatures, music systems, and testing' }),
       el('p', { text:'Built as an original Three.js voxel adventure' }),
       el('p', { text:`Dragon victories: ${formatNumber(snapshot?.counters?.dragonsDefeated)}` }),

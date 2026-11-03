@@ -1,7 +1,7 @@
 {
-  "name": "Voxel Sandbox",
-  "short_name": "Voxel",
-  "description": "An original browser voxel sandbox engine built with Three.js.",
+  "name": "TitanCraft",
+  "short_name": "TitanCraft",
+  "description": "TitanCraft - an original browser voxel sandbox engine built with Three.js.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

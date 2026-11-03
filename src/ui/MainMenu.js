@@ -126,7 +126,7 @@ export class MainMenu {
 
     this._listPanel = el('div', { className: 'panel dialog' }, [
       el('div', { className: 'menu-brand' }, [
-        el('h1', { text: 'VOXEL SANDBOX' }),
+        el('h1', { text: 'TITANCRAFT' }),
         el('p', { text: 'An original browser voxel engine' }),
       ]),
       this._storageNote,
